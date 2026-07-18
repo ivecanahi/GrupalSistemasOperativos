@@ -1,0 +1,60 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Vite + React 19 + TypeScript, no backend.
+  Domain: CPU scheduling simulator — SJF (non-preemptive) and Round Robin
+  (fixed runtime quantum) in one controllable UI.
+  File I/O: xlsx only, via SheetJS CDN tgz (npm xlsx has 2 unpatched CVEs).
+  Structure: src/{types,core,lib,components}, 5 module areas split by team.
+  Testing: no runner installed yet (Strict TDD enabled — must be added).
+  Lint: oxlint (.oxlintrc.json).
+
+strict_tdd: true
+
+testing:
+  runner: none-detected
+  layers:
+    unit: false
+    integration: false
+    e2e: false
+  coverage: false
+  quality:
+    linter: oxlint (npm run lint)
+    type_checker: tsc -b (npm run build)
+    formatter: none-detected
+  risk: >
+    Strict TDD is enabled globally but no test runner (vitest/jest) is
+    installed. Recommend adding vitest before sdd-apply starts on any
+    module, especially the scheduling engine (module 1).
+
+rules:
+  proposal:
+    - Scope each change to exactly one of the 5 module areas unless the
+      change is explicitly cross-cutting (e.g. integration/testing).
+    - Include rollback plan for risky changes.
+  specs:
+    - Use Given/When/Then for scenarios.
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY).
+    - Reference existing types in src/types/scheduling.ts; do not redefine.
+  design:
+    - Document algorithm invariants (SJF tie-break, RR quantum rotation)
+      explicitly.
+    - Note xlsx column contract (id, name, arrivalTime, burstTime).
+  tasks:
+    - Group by phase, use hierarchical numbering.
+    - Keep tasks completable in one session.
+    - Tag tasks with the responsible module owner (1-5) per the difficulty
+      ranking: engine (hardest) > xlsx I/O (medium-high) > Gantt (medium) >
+      process input (easy-medium) > stats+integration (easy).
+  apply:
+    guidelines:
+      - Follow existing stub contracts in src/core, src/lib, src/components.
+      - Replace "pendiente de implementación" throws with real logic.
+    tdd: true
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: "npm run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.

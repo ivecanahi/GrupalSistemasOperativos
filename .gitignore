@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local AI tooling (machine-specific, not needed by teammates)
+.codegraph/
+.engram/
+.atl/
