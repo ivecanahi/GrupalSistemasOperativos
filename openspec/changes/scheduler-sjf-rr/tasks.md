@@ -36,22 +36,22 @@ Ask the user: stacked-to-main, feature-branch-chain, or size:exception, before `
 ## Integrante 1 — Motor de scheduling (dificil)
 `src/core/sjf.ts`, `src/core/roundRobin.ts`, `src/core/index.ts`
 
-- [ ] 1.0 Add `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/jest-dom` to `package.json` devDependencies (shared bootstrap, owned by Integrante 1 — blocks everyone's TDD, do first)
-- [ ] 1.1 Create `vitest.config.ts` extending Vite config, `environment: 'jsdom'`
-- [ ] 1.2 Add `"test": "vitest run"` and `"test:watch": "vitest"` scripts to `package.json`
-- [ ] 1.3 RED: `src/core/sjf.test.ts` — shortest burst runs first among arrived (A/B/C scenario, spec scheduling-engine)
-- [ ] 1.4 RED: `src/core/sjf.test.ts` — tie-break by `arrivalTime` then ascending `id` on equal burst
-- [ ] 1.5 RED: `src/core/sjf.test.ts` — CPU idle gap before next arrival produces no `ExecutionSlice`
-- [ ] 1.6 GREEN: implement `runSJF` in `src/core/sjf.ts` against frozen `ProcessInput`/`SchedulingResult` contract
-- [ ] 1.7 REFACTOR: `src/core/sjf.ts`
-- [ ] 1.8 RED: `src/core/roundRobin.test.ts` — process finishes within quantum, not requeued
-- [ ] 1.9 RED: `src/core/roundRobin.test.ts` — process exceeds quantum, preempted and requeued with reduced burst
-- [ ] 1.10 RED: `src/core/roundRobin.test.ts` — idle gap when queue empty and next arrival pending
-- [ ] 1.11 RED: `src/core/roundRobin.test.ts` — simultaneous arrival + quantum expiry: new arrival Y enqueued BEFORE requeued process X (locked design decision, Silberschatz convention)
-- [ ] 1.12 GREEN: implement `runRoundRobin(processes, quantum)` in `src/core/roundRobin.ts` with FIFO circular queue honoring runtime `SchedulerConfig.quantum`
-- [ ] 1.13 REFACTOR: `src/core/roundRobin.ts`
-- [ ] 1.14 RED: `src/core/index.test.ts` — `schedule()` dispatches to `runSJF`/`runRoundRobin` and throws on missing/invalid RR quantum
-- [ ] 1.15 GREEN/verify: confirm `src/core/index.ts` (`schedule`) already satisfies 1.14; adjust only if a test fails
+- [x] 1.0 Add `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/jest-dom` to `package.json` devDependencies (shared bootstrap, owned by Integrante 1 — blocks everyone's TDD, do first)
+- [x] 1.1 Create `vitest.config.ts` extending Vite config, `environment: 'jsdom'`
+- [x] 1.2 Add `"test": "vitest run"` and `"test:watch": "vitest"` scripts to `package.json`
+- [x] 1.3 RED: `src/core/sjf.test.ts` — shortest burst runs first among arrived (A/B/C scenario, spec scheduling-engine)
+- [x] 1.4 RED: `src/core/sjf.test.ts` — tie-break by `arrivalTime` then ascending `id` on equal burst
+- [x] 1.5 RED: `src/core/sjf.test.ts` — CPU idle gap before next arrival produces no `ExecutionSlice`
+- [x] 1.6 GREEN: implement `runSJF` in `src/core/sjf.ts` against frozen `ProcessInput`/`SchedulingResult` contract
+- [x] 1.7 REFACTOR: `src/core/sjf.ts`
+- [x] 1.8 RED: `src/core/roundRobin.test.ts` — process finishes within quantum, not requeued
+- [x] 1.9 RED: `src/core/roundRobin.test.ts` — process exceeds quantum, preempted and requeued with reduced burst
+- [x] 1.10 RED: `src/core/roundRobin.test.ts` — idle gap when queue empty and next arrival pending
+- [x] 1.11 RED: `src/core/roundRobin.test.ts` — simultaneous arrival + quantum expiry: new arrival Y enqueued BEFORE requeued process X (locked design decision, Silberschatz convention)
+- [x] 1.12 GREEN: implement `runRoundRobin(processes, quantum)` in `src/core/roundRobin.ts` with FIFO circular queue honoring runtime `SchedulerConfig.quantum`
+- [x] 1.13 REFACTOR: `src/core/roundRobin.ts`
+- [x] 1.14 RED: `src/core/index.test.ts` — `schedule()` dispatches to `runSJF`/`runRoundRobin` and throws on missing/invalid RR quantum
+- [x] 1.15 GREEN/verify: confirm `src/core/index.ts` (`schedule`) already satisfies 1.14; adjust only if a test fails
 
 ## Integrante 2 — Carga/guardado xlsx (medio-alto)
 `src/lib/xlsxIO.ts`
