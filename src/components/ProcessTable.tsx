@@ -6,6 +6,6 @@ interface ProcessTableProps {
 }
 
 // Módulo 2 (input): alta/edición manual de procesos (id, name, arrivalTime, burstTime) y validaciones.
-export function ProcessTable({ processes, onChange }: ProcessTableProps) {
+export function ProcessTable({ processes }: ProcessTableProps) {
   return <div>ProcessTable: pendiente de implementación ({processes.length} procesos)</div>;
 }

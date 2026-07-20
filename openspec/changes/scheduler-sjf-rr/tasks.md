@@ -56,15 +56,15 @@ Ask the user: stacked-to-main, feature-branch-chain, or size:exception, before `
 ## Integrante 2 — Carga/guardado xlsx (medio-alto)
 `src/lib/xlsxIO.ts`
 
-- [ ] 2.1 RED: `src/lib/xlsxIO.test.ts` — reject non-`.xlsx` extension on load with clear error, imports nothing
-- [ ] 2.2 RED: `src/lib/xlsxIO.test.ts` — valid file with all rows having id/name/numeric arrivalTime/burstTime imports as `ProcessInput[]`
-- [ ] 2.3 RED: `src/lib/xlsxIO.test.ts` — one row missing `burstTime` rejects the ENTIRE file, imports zero rows (locked reject-entire-file-on-any-invalid-row decision)
-- [ ] 2.4 RED: `src/lib/xlsxIO.test.ts` — one row with non-numeric `arrivalTime` rejects the entire file
-- [ ] 2.5 RED: `src/lib/xlsxIO.test.ts` — 10 valid rows + 1 bad-type row: none imported, whole file rejected
-- [ ] 2.6 GREEN: implement `readProcessesFromXlsx(file: File): Promise<ProcessInput[]>` in `src/lib/xlsxIO.ts` using SheetJS CDN build, strict validate-then-import, throw/reject with user-facing error message on any invalid row
-- [ ] 2.7 RED: `src/lib/xlsxIO.test.ts` — save produces `.xlsx` with columns `id, name, arrivalTime, burstTime`
-- [ ] 2.8 GREEN: implement `writeProcessesToXlsx(processes: ProcessInput[], filename: string): void` in `src/lib/xlsxIO.ts`
-- [ ] 2.9 REFACTOR: `src/lib/xlsxIO.ts`
+- [x] 2.1 RED: `src/lib/xlsxIO.test.ts` — reject non-`.xlsx` extension on load with clear error, imports nothing
+- [x] 2.2 RED: `src/lib/xlsxIO.test.ts` — valid file with all rows having id/name/numeric arrivalTime/burstTime imports as `ProcessInput[]`
+- [x] 2.3 RED: `src/lib/xlsxIO.test.ts` — one row missing `burstTime` rejects the ENTIRE file, imports zero rows (locked reject-entire-file-on-any-invalid-row decision)
+- [x] 2.4 RED: `src/lib/xlsxIO.test.ts` — one row with non-numeric `arrivalTime` rejects the entire file
+- [x] 2.5 RED: `src/lib/xlsxIO.test.ts` — 10 valid rows + 1 bad-type row: none imported, whole file rejected
+- [x] 2.6 GREEN: implement `readProcessesFromXlsx(file: File): Promise<ProcessInput[]>` in `src/lib/xlsxIO.ts` using SheetJS CDN build, strict validate-then-import, throw/reject with user-facing error message on any invalid row
+- [x] 2.7 RED: `src/lib/xlsxIO.test.ts` — save produces `.xlsx` with columns `id, name, arrivalTime, burstTime`
+- [x] 2.8 GREEN: implement `writeProcessesToXlsx(processes: ProcessInput[], filename: string): void` in `src/lib/xlsxIO.ts`
+- [x] 2.9 REFACTOR: `src/lib/xlsxIO.ts`
 
 ## Integrante 3 — Gantt visual (medio)
 `src/components/GanttChart.tsx`
