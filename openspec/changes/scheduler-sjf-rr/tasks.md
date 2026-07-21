@@ -69,24 +69,24 @@ Ask the user: stacked-to-main, feature-branch-chain, or size:exception, before `
 ## Integrante 3 — Gantt visual (medio)
 `src/components/GanttChart.tsx`
 
-- [ ] 3.1 RED: `src/components/GanttChart.test.tsx` — slices of duration 2/5/3 render with proportional widths (2:5:3)
-- [ ] 3.2 RED: `src/components/GanttChart.test.tsx` — same `processId` keeps same color across non-contiguous slices, distinct from other processes
-- [ ] 3.3 RED: `src/components/GanttChart.test.tsx` — idle gap before first arrival (e.g. [0,3)) renders as distinct idle segment, not execution
-- [ ] 3.4 RED: `src/components/GanttChart.test.tsx` — empty timeline renders placeholder/empty state without throwing
-- [ ] 3.5 GREEN: implement `GanttChart` in `src/components/GanttChart.tsx` accepting frozen `GanttChartProps { timeline: ExecutionSlice[] }`, computing idle gaps from timeline span, per-process color map
-- [ ] 3.6 REFACTOR: `src/components/GanttChart.tsx`
+- [x] 3.1 RED: `src/components/GanttChart.test.tsx` — slices of duration 2/5/3 render with proportional widths (2:5:3)
+- [x] 3.2 RED: `src/components/GanttChart.test.tsx` — same `processId` keeps same color across non-contiguous slices, distinct from other processes
+- [x] 3.3 RED: `src/components/GanttChart.test.tsx` — idle gap before first arrival (e.g. [0,3)) renders as distinct idle segment, not execution
+- [x] 3.4 RED: `src/components/GanttChart.test.tsx` — empty timeline renders placeholder/empty state without throwing
+- [x] 3.5 GREEN: implement `GanttChart` in `src/components/GanttChart.tsx` accepting frozen `GanttChartProps { timeline: ExecutionSlice[] }`, computing idle gaps from timeline span, per-process color map
+- [x] 3.6 REFACTOR: `src/components/GanttChart.tsx`
 
 ## Integrante 4 — Tabla de procesos (facil-medio)
 `src/components/ProcessTable.tsx`
 
-- [ ] 4.1 RED: `src/components/ProcessTable.test.tsx` — add valid row appears in table
-- [ ] 4.2 RED: `src/components/ProcessTable.test.tsx` — edit existing row's `burstTime` to a valid positive number updates it
-- [ ] 4.3 RED: `src/components/ProcessTable.test.tsx` — delete row removes it from table and from `onChange` output
-- [ ] 4.4 RED: `src/components/ProcessTable.test.tsx` — reject `arrivalTime` = 0 or negative with validation error, no add/update
-- [ ] 4.5 RED: `src/components/ProcessTable.test.tsx` — reject non-numeric `burstTime` with validation error
-- [ ] 4.6 RED: `src/components/ProcessTable.test.tsx` — reject empty `id` or `name` with validation error
-- [ ] 4.7 GREEN: implement `ProcessTable` in `src/components/ProcessTable.tsx` against frozen `ProcessTableProps { processes: ProcessInput[]; onChange: (processes: ProcessInput[]) => void }` with CRUD + positive-numeric/non-empty validation
-- [ ] 4.8 REFACTOR: `src/components/ProcessTable.tsx`
+- [x] 4.1 RED: `src/components/ProcessTable.test.tsx` — add valid row appears in table
+- [x] 4.2 RED: `src/components/ProcessTable.test.tsx` — edit existing row's `burstTime` to a valid positive number updates it
+- [x] 4.3 RED: `src/components/ProcessTable.test.tsx` — delete row removes it from table and from `onChange` output
+- [x] 4.4 RED: `src/components/ProcessTable.test.tsx` — reject `arrivalTime` = 0 or negative with validation error, no add/update
+- [x] 4.5 RED: `src/components/ProcessTable.test.tsx` — reject non-numeric `burstTime` with validation error
+- [x] 4.6 RED: `src/components/ProcessTable.test.tsx` — reject empty `id` or `name` with validation error
+- [x] 4.7 GREEN: implement `ProcessTable` in `src/components/ProcessTable.tsx` against frozen `ProcessTableProps { processes: ProcessInput[]; onChange: (processes: ProcessInput[]) => void }` with CRUD + positive-numeric/non-empty validation
+- [x] 4.8 REFACTOR: `src/components/ProcessTable.tsx`
 
 ## Integrante 5 — Panel de metricas + integracion/testing (facil, depende de 1-4)
 `src/components/StatsPanel.tsx`, `src/App.tsx` (start only after units 1-4 land)
