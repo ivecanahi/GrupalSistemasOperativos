@@ -82,7 +82,7 @@ Ask the user: stacked-to-main, feature-branch-chain, or size:exception, before `
 - [x] 4.1 RED: `src/components/ProcessTable.test.tsx` — add valid row appears in table
 - [x] 4.2 RED: `src/components/ProcessTable.test.tsx` — edit existing row's `burstTime` to a valid positive number updates it
 - [x] 4.3 RED: `src/components/ProcessTable.test.tsx` — delete row removes it from table and from `onChange` output
-- [x] 4.4 RED: `src/components/ProcessTable.test.tsx` — reject `arrivalTime` = 0 or negative with validation error, no add/update
+- [x] 4.4 RED: `src/components/ProcessTable.test.tsx` — accept `arrivalTime` = 0, reject negative with validation error, no add/update
 - [x] 4.5 RED: `src/components/ProcessTable.test.tsx` — reject non-numeric `burstTime` with validation error
 - [x] 4.6 RED: `src/components/ProcessTable.test.tsx` — reject empty `id` or `name` with validation error
 - [x] 4.7 GREEN: implement `ProcessTable` in `src/components/ProcessTable.tsx` against frozen `ProcessTableProps { processes: ProcessInput[]; onChange: (processes: ProcessInput[]) => void }` with CRUD + positive-numeric/non-empty validation

@@ -26,7 +26,7 @@ function validateDraft(draft: DraftForm, processes: ProcessInput[], excludeId?: 
   if (draft.arrivalTime.trim() === '' || !Number.isFinite(arrivalTime)) {
     return 'arrivalTime debe ser un número';
   }
-  if (arrivalTime <= 0) return 'arrivalTime debe ser mayor que 0';
+  if (arrivalTime < 0) return 'arrivalTime no puede ser negativo';
 
   const burstTime = Number(draft.burstTime);
   if (draft.burstTime.trim() === '' || !Number.isFinite(burstTime)) {

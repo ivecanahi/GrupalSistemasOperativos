@@ -33,13 +33,17 @@ input.
 
 ### Requirement: Positive Numeric Validation
 
-The system MUST validate that `arrivalTime` and `burstTime` are numeric and
-strictly greater than zero, and that `id` and `name` are non-empty, before
-accepting an add or edit operation.
+The system MUST validate that `arrivalTime` is numeric and non-negative,
+`burstTime` is numeric and strictly greater than zero, and that `id` and
+`name` are non-empty, before accepting an add or edit operation.
 
-#### Scenario: Reject non-positive arrivalTime
+#### Scenario: Accept zero arrivalTime and reject negative
 
-- GIVEN a user enters `arrivalTime = 0` or a negative number
+- GIVEN a user enters `arrivalTime = 0`
+- WHEN they submit
+- THEN the system accepts the row
+
+- GIVEN a user enters a negative `arrivalTime`
 - WHEN they submit
 - THEN the system shows a validation error and does not add/update the row
 

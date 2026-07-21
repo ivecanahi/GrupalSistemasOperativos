@@ -91,21 +91,23 @@ describe('ProcessTable', () => {
   // =========================================================
   // Task 4.4: Reject non-positive arrivalTime
   // =========================================================
-  it('rejects arrivalTime = 0 or negative with a validation error and does not add the row [4.4]', () => {
+  it('accepts arrivalTime = 0 and rejects negative with a validation error [4.4]', () => {
     const handleChange = vi.fn();
     render(<ProcessTable processes={[]} onChange={handleChange} />);
 
+    // arrivalTime = 0 is valid
     fillAddForm({ id: 'P1', name: 'Compile', arrivalTime: '0', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/arrivalTime/i);
-    expect(handleChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(handleChange).toHaveBeenCalledTimes(1);
 
-    fillAddForm({ arrivalTime: '-3' });
+    // Negative arrivalTime is rejected
+    fillAddForm({ id: 'P2', name: 'Invalid', arrivalTime: '-3', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
     expect(screen.getByRole('alert').textContent).toMatch(/arrivalTime/i);
-    expect(handleChange).not.toHaveBeenCalled();
+    expect(handleChange).toHaveBeenCalledTimes(1); // still 1, second add rejected
   });
 
   // =========================================================
