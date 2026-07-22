@@ -1,27 +1,41 @@
-import type { ProcessInput, SchedulingResult, ExecutionSlice, ProcessResult } from '../types/scheduling';
+import type { ProcessInput, SchedulingResult, ExecutionSlice, ProcessResult, QueueSlice } from '../types/scheduling';
+import { normalizeIoOperations } from './ioOperations';
+
+interface ProcState {
+  index: number;
+  opIndex: number;
+  cpuConsumed: number;
+  stage: 'running' | 'done';
+  /**
+   * Gate for readiness while `stage === 'running'`: `arrivalTime` before the
+   * process has ever run, or the completion time of its most recent I/O
+   * wait once it has returned from one.
+   */
+  nextReadyTime: number;
+}
 
 /**
- * Pick the index of the shortest-burst process among ready candidates.
- * Ties broken by earliest arrivalTime, then ascending id.
+ * Pick the shortest current-phase duration among ready candidates.
+ * Ties broken by earliest readyTime (arrivalTime for never-yet-run
+ * processes, I/O-completion time for I/O returnees), then ascending id.
  */
-function selectShortestBurst(
+function selectShortest(
   ready: number[],
   processes: ProcessInput[],
+  durationOf: (i: number) => number,
+  readyTimeOf: (i: number) => number,
 ): number {
   let sel = ready[0];
   for (let i = 1; i < ready.length; i++) {
     const idx = ready[i];
-    const curr = processes[sel];
-    const cand = processes[idx];
-
-    const burstCmp = cand.burstTime - curr.burstTime;
-    if (burstCmp < 0) {
+    const durCmp = durationOf(idx) - durationOf(sel);
+    if (durCmp < 0) {
       sel = idx;
-    } else if (burstCmp === 0) {
-      const arrivalCmp = cand.arrivalTime - curr.arrivalTime;
-      if (arrivalCmp < 0) {
+    } else if (durCmp === 0) {
+      const readyCmp = readyTimeOf(idx) - readyTimeOf(sel);
+      if (readyCmp < 0) {
         sel = idx;
-      } else if (arrivalCmp === 0 && cand.id < curr.id) {
+      } else if (readyCmp === 0 && processes[idx].id < processes[sel].id) {
         sel = idx;
       }
     }
@@ -30,31 +44,19 @@ function selectShortestBurst(
 }
 
 /**
- * Find the earliest arrivalTime among incomplete processes.
- * Returns Infinity when none remain (should not happen in practice).
- */
-function nextArrivalTime(
-  processes: ProcessInput[],
-  done: boolean[],
-): number {
-  let next = Infinity;
-  for (let i = 0; i < processes.length; i++) {
-    if (!done[i] && processes[i].arrivalTime < next) {
-      next = processes[i].arrivalTime;
-    }
-  }
-  return next;
-}
-
-/**
- * Non-preemptive Shortest Job First scheduling.
+ * Non-preemptive Shortest Job First scheduling, with optional multi-op I/O
+ * interruption (any number of I/O operations per process, including zero
+ * or one — which degrades exactly to legacy behavior).
  *
- * At each decision point, among processes that have arrived and not yet run,
- * selects the one with the shortest burstTime. Ties broken by earliest
- * arrivalTime, then ascending id.
+ * For processes without I/O, behavior is identical to plain SJF: shortest
+ * burst first among arrived, ties broken by earliest arrivalTime then
+ * ascending id, idle gaps jump the clock to the next arrival.
  *
- * Idle gaps (no process arrived at currentTime) produce no execution slices —
- * the clock jumps to the next arrival.
+ * For a process with one or more I/O operations (see `normalizeIoOperations`),
+ * its burst is split into CPU phases separated by I/O waits; the CPU is
+ * released during each I/O wait so other ready processes can run. Once an
+ * I/O operation completes, the process becomes ready again to run its next
+ * CPU phase.
  */
 export function runSJF(processes: ProcessInput[]): SchedulingResult {
   if (processes.length === 0) {
@@ -63,62 +65,112 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       processResults: [],
       averageWaitingTime: 0,
       averageTurnaroundTime: 0,
+      ioTimeline: [],
     };
   }
 
   const n = processes.length;
-  const done = new Array<boolean>(n).fill(false);
+  const allOps = processes.map(normalizeIoOperations);
+
+  const states: ProcState[] = processes.map((p, i) => ({
+    index: i,
+    opIndex: 0,
+    cpuConsumed: 0,
+    stage: 'running',
+    nextReadyTime: p.arrivalTime,
+  }));
+
   let completedCount = 0;
   let currentTime = 0;
 
   const timeline: ExecutionSlice[] = [];
-  const resultMap = new Map<string, ProcessResult>();
+  const ioTimeline: QueueSlice[] = [];
+  const firstStart = new Map<string, number>();
+  const finishTime = new Map<string, number>();
+
+  const durationOf = (i: number): number => {
+    const st = states[i];
+    const ops = allOps[i];
+    return st.opIndex < ops.length
+      ? ops[st.opIndex].after - st.cpuConsumed
+      : processes[i].burstTime - st.cpuConsumed;
+  };
+  const readyTimeOf = (i: number): number => states[i].nextReadyTime;
 
   while (completedCount < n) {
-    // Gather ready processes (arrived + not done)
     const ready: number[] = [];
     for (let i = 0; i < n; i++) {
-      if (!done[i] && processes[i].arrivalTime <= currentTime) {
+      const st = states[i];
+      if (st.stage === 'running' && st.nextReadyTime <= currentTime) {
         ready.push(i);
       }
     }
 
     if (ready.length === 0) {
-      // Idle gap — jump clock to next arrival
-      currentTime = nextArrivalTime(processes, done);
+      let nextTime = Infinity;
+      for (let i = 0; i < n; i++) {
+        const st = states[i];
+        if (st.stage === 'running' && st.nextReadyTime < nextTime) {
+          nextTime = st.nextReadyTime;
+        }
+      }
+      currentTime = nextTime;
       continue;
     }
 
-    const sel = selectShortestBurst(ready, processes);
+    const sel = selectShortest(ready, processes, durationOf, readyTimeOf);
     const p = processes[sel];
+    const st = states[sel];
+    const ops = allOps[sel];
+    const dur = durationOf(sel);
     const startTime = currentTime;
-    const finishTime = startTime + p.burstTime;
+    const end = startTime + dur;
 
-    timeline.push({
-      processId: p.id,
-      start: startTime,
-      end: finishTime,
-    });
+    timeline.push({ processId: p.id, start: startTime, end });
+    if (!firstStart.has(p.id)) firstStart.set(p.id, startTime);
 
-    resultMap.set(p.id, {
+    st.cpuConsumed += dur;
+
+    if (st.opIndex < ops.length) {
+      // This phase ended by hitting an I/O trigger.
+      const op = ops[st.opIndex];
+      const ioStart = end;
+      const ioEnd = end + op.duration;
+      ioTimeline.push({ processId: p.id, start: ioStart, end: ioEnd });
+      st.opIndex += 1;
+
+      if (st.cpuConsumed === p.burstTime) {
+        st.stage = 'done';
+        finishTime.set(p.id, ioEnd);
+        completedCount++;
+      } else {
+        st.nextReadyTime = ioEnd;
+      }
+    } else {
+      st.stage = 'done';
+      finishTime.set(p.id, end);
+      completedCount++;
+    }
+
+    currentTime = end;
+  }
+
+  const processResults: ProcessResult[] = [];
+  for (const p of processes) {
+    const startTime = firstStart.get(p.id)!;
+    const finish = finishTime.get(p.id)!;
+    const turnaroundTime = finish - p.arrivalTime;
+    const sumIo = normalizeIoOperations(p).reduce((s, op) => s + op.duration, 0);
+    const waitingTime = turnaroundTime - p.burstTime - sumIo;
+
+    processResults.push({
       processId: p.id,
       arrivalTime: p.arrivalTime,
       startTime,
-      finishTime,
-      waitingTime: startTime - p.arrivalTime,
-      turnaroundTime: finishTime - p.arrivalTime,
+      finishTime: finish,
+      waitingTime,
+      turnaroundTime,
     });
-
-    done[sel] = true;
-    completedCount++;
-    currentTime = finishTime;
-  }
-
-  // Build results preserving input order
-  const processResults: ProcessResult[] = [];
-  for (const p of processes) {
-    const r = resultMap.get(p.id);
-    if (r) processResults.push(r);
   }
 
   const sumWaiting = processResults.reduce((s, r) => s + r.waitingTime, 0);
@@ -129,5 +181,6 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
     processResults,
     averageWaitingTime: sumWaiting / n,
     averageTurnaroundTime: sumTurnaround / n,
+    ioTimeline,
   };
 }

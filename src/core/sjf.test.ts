@@ -143,4 +143,197 @@ describe('runSJF — Shortest Job First (non-preemptive)', () => {
     expect(result.averageWaitingTime).toBe(0);
     expect(result.averageTurnaroundTime).toBe(0);
   });
+
+  // =========================================================
+  // Mid-burst I/O interruption
+  // =========================================================
+  describe('mid-burst I/O interruption', () => {
+    it('produces phase1, io, and phase2 slices for a single process with ioTriggerAfter', () => {
+      const processes: ProcessInput[] = [
+        { id: 'A', name: 'A', arrivalTime: 0, burstTime: 6, ioBurstTime: 3, ioTriggerAfter: 2 },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      // phase1: [0,2), io: [2,5), phase2: [5,9)
+      expect(result.timeline).toEqual([
+        { processId: 'A', start: 0, end: 2 },
+        { processId: 'A', start: 5, end: 9 },
+      ]);
+      expect(result.ioTimeline).toEqual([{ processId: 'A', start: 2, end: 5 }]);
+    });
+
+    it('lets an independent process run its own burst during another process I/O wait', () => {
+      // A: phase1=2, io=10, phase2=2 (burstTime=4, ioTriggerAfter=2)
+      // B arrives during A's io wait with a short burst
+      const processes: ProcessInput[] = [
+        { id: 'A', name: 'A', arrivalTime: 0, burstTime: 4, ioBurstTime: 10, ioTriggerAfter: 2 },
+        { id: 'B', name: 'B', arrivalTime: 3, burstTime: 3 },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      // A phase1 [0,2), io [2,12)
+      // B arrives at 3, CPU is free (A is doing I/O) -> B runs [3,6)
+      // A phase2 runs after io ends at 12 -> [12,14)
+      const aIo = result.ioTimeline!.find(s => s.processId === 'A')!;
+      expect(aIo).toEqual({ processId: 'A', start: 2, end: 12 });
+
+      const bSlice = result.timeline.find(s => s.processId === 'B')!;
+      expect(bSlice.start).toBeGreaterThanOrEqual(aIo.start);
+      expect(bSlice.end).toBeLessThanOrEqual(aIo.end);
+      expect(bSlice).toEqual({ processId: 'B', start: 3, end: 6 });
+
+      const aPhase2 = result.timeline.find(s => s.processId === 'A' && s.start === 12)!;
+      expect(aPhase2).toEqual({ processId: 'A', start: 12, end: 14 });
+    });
+
+    it('computes waitingTime/turnaroundTime subtracting both burstTime and ioBurstTime', () => {
+      const processes: ProcessInput[] = [
+        { id: 'A', name: 'A', arrivalTime: 0, burstTime: 6, ioBurstTime: 3, ioTriggerAfter: 2 },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+      const rA = result.processResults[0];
+
+      // finishTime = 9 (phase2 ends at 9), turnaround = 9 - 0 = 9
+      // waiting = turnaround - burstTime - ioBurstTime = 9 - 6 - 3 = 0
+      expect(rA.finishTime).toBe(9);
+      expect(rA.turnaroundTime).toBe(9);
+      expect(rA.waitingTime).toBe(0);
+    });
+
+    it('behaves like legacy "I/O after full burst" when ioTriggerAfter is omitted', () => {
+      const processes: ProcessInput[] = [
+        { id: 'A', name: 'A', arrivalTime: 0, burstTime: 5, ioBurstTime: 4 },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      // phase1Duration = burstTime (5), phase2Duration = 0 -> done right after io
+      expect(result.timeline).toEqual([{ processId: 'A', start: 0, end: 5 }]);
+      expect(result.ioTimeline).toEqual([{ processId: 'A', start: 5, end: 9 }]);
+      expect(result.processResults[0].finishTime).toBe(9);
+      expect(result.processResults[0].turnaroundTime).toBe(9);
+      expect(result.processResults[0].waitingTime).toBe(0);
+    });
+  });
+
+  // =========================================================
+  // Multi-op I/O: several I/O operations per process
+  // =========================================================
+  describe('multi-op I/O (several operations per process)', () => {
+    it('produces 4 CPU slices and 3 correctly-timed io slices for a process with 3 io operations', () => {
+      // burst=10, ops=[{after:2,dur:3},{after:5,dur:4},{after:8,dur:2}]
+      // phase durations: 2 ([0,2)), then 3 ([5,8)), then 3 ([12,15)), then 2 ([17,19))
+      // io slices: [2,5) dur 3, [8,12) dur 4, [15,17) dur 2
+      const processes: ProcessInput[] = [
+        {
+          id: 'A',
+          name: 'A',
+          arrivalTime: 0,
+          burstTime: 10,
+          ioOperations: [
+            { after: 2, duration: 3 },
+            { after: 5, duration: 4 },
+            { after: 8, duration: 2 },
+          ],
+        },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      expect(result.timeline).toEqual([
+        { processId: 'A', start: 0, end: 2 },
+        { processId: 'A', start: 5, end: 8 },
+        { processId: 'A', start: 12, end: 15 },
+        { processId: 'A', start: 17, end: 19 },
+      ]);
+      expect(result.ioTimeline).toEqual([
+        { processId: 'A', start: 2, end: 5 },
+        { processId: 'A', start: 8, end: 12 },
+        { processId: 'A', start: 15, end: 17 },
+      ]);
+
+      const rA = result.processResults[0];
+      expect(rA.finishTime).toBe(19);
+      expect(rA.turnaroundTime).toBe(19);
+      // waiting = turnaround - burstTime - sum(io durations) = 19 - 10 - 9 = 0
+      expect(rA.waitingTime).toBe(0);
+    });
+
+    it('lets a concurrently-arriving second process run its own burst during each of the first process I/O waits', () => {
+      const processes: ProcessInput[] = [
+        {
+          id: 'A',
+          name: 'A',
+          arrivalTime: 0,
+          burstTime: 10,
+          ioOperations: [
+            { after: 2, duration: 3 },
+            { after: 5, duration: 4 },
+          ],
+        },
+        { id: 'B', name: 'B', arrivalTime: 3, burstTime: 2 },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      // A: phase1 [0,2), io [2,5)
+      // B arrives at 3 while A is doing io (CPU free) -> B runs [3,5)
+      const bSlice = result.timeline.find(s => s.processId === 'B')!;
+      expect(bSlice).toEqual({ processId: 'B', start: 3, end: 5 });
+
+      const aIo1 = result.ioTimeline!.find(s => s.processId === 'A' && s.start === 2)!;
+      expect(bSlice.start).toBeGreaterThanOrEqual(aIo1.start);
+      expect(bSlice.end).toBeLessThanOrEqual(aIo1.end);
+    });
+
+    it('takes ioOperations precedence over legacy ioBurstTime/ioTriggerAfter when both are present', () => {
+      const processes: ProcessInput[] = [
+        {
+          id: 'A',
+          name: 'A',
+          arrivalTime: 0,
+          burstTime: 6,
+          ioBurstTime: 99,
+          ioTriggerAfter: 99,
+          ioOperations: [{ after: 2, duration: 3 }],
+        },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+
+      // Should use ioOperations (after:2, duration:3), not the legacy 99/99 values
+      expect(result.timeline).toEqual([
+        { processId: 'A', start: 0, end: 2 },
+        { processId: 'A', start: 5, end: 9 },
+      ]);
+      expect(result.ioTimeline).toEqual([{ processId: 'A', start: 2, end: 5 }]);
+    });
+
+    it('correctly sums all io durations in the waitingTime/turnaroundTime formulas for multiple ops', () => {
+      const processes: ProcessInput[] = [
+        {
+          id: 'A',
+          name: 'A',
+          arrivalTime: 0,
+          burstTime: 8,
+          ioOperations: [
+            { after: 3, duration: 2 },
+            { after: 6, duration: 5 },
+          ],
+        },
+      ];
+
+      const result: SchedulingResult = runSJF(processes);
+      const rA = result.processResults[0];
+
+      // phase1 [0,3), io1 [3,5), phase2 [5,8), io2 [8,13), phase3 [13,15)
+      expect(rA.finishTime).toBe(15);
+      expect(rA.turnaroundTime).toBe(15);
+      // waiting = turnaround(15) - burstTime(8) - sumIo(2+5=7) = 0
+      expect(rA.waitingTime).toBe(rA.turnaroundTime - 8 - 7);
+    });
+  });
 });

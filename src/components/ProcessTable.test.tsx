@@ -8,17 +8,27 @@ afterEach(cleanup);
 
 function ControlledProcessTable({ initial }: { initial: ProcessInput[] }) {
   const [processes, setProcesses] = useState<ProcessInput[]>(initial);
-  return <ProcessTable processes={processes} onChange={setProcesses} />;
+  return <ProcessTable processes={processes} onChange={setProcesses} colorMap={new Map()} />;
 }
 
-function fillAddForm(values: { id?: string; name?: string; arrivalTime?: string; burstTime?: string }) {
-  if (values.id !== undefined) fireEvent.change(screen.getByLabelText('Nuevo id'), { target: { value: values.id } });
-  if (values.name !== undefined) fireEvent.change(screen.getByLabelText('Nuevo nombre'), { target: { value: values.name } });
+function fillAddForm(values: { id?: string; arrivalTime?: string; burstTime?: string }) {
+  if (values.id !== undefined) fireEvent.change(screen.getByLabelText('Nuevo proceso'), { target: { value: values.id } });
   if (values.arrivalTime !== undefined) {
     fireEvent.change(screen.getByLabelText('Nueva llegada'), { target: { value: values.arrivalTime } });
   }
   if (values.burstTime !== undefined) {
     fireEvent.change(screen.getByLabelText('Nueva ráfaga'), { target: { value: values.burstTime } });
+  }
+}
+
+/** Clicks "+ Agregar E/S" in the given container, then fills the newly-added row's fields by its 1-based index. */
+function addIoOpRow(container: HTMLElement, labelPrefix: string, n: number, after?: string, duration?: string) {
+  fireEvent.click(within(container).getByRole('button', { name: '+ Agregar E/S' }));
+  if (after !== undefined) {
+    fireEvent.change(screen.getByLabelText(`${labelPrefix}Tras (ms) ${n}`), { target: { value: after } });
+  }
+  if (duration !== undefined) {
+    fireEvent.change(screen.getByLabelText(`${labelPrefix}Duración (ms) ${n}`), { target: { value: duration } });
   }
 }
 
@@ -29,12 +39,11 @@ describe('ProcessTable', () => {
   it('adds a valid row and shows it in the table [4.1]', () => {
     render(<ControlledProcessTable initial={[]} />);
 
-    fillAddForm({ id: 'P1', name: 'Compile', arrivalTime: '2', burstTime: '5' });
+    fillAddForm({ id: 'P1', arrivalTime: '2', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
     const dataRow = screen.getAllByRole('row')[1];
     expect(within(dataRow).getByText('P1')).toBeTruthy();
-    expect(within(dataRow).getByText('Compile')).toBeTruthy();
     expect(within(dataRow).getByText('2')).toBeTruthy();
     expect(within(dataRow).getByText('5')).toBeTruthy();
   });
@@ -43,7 +52,7 @@ describe('ProcessTable', () => {
   // Task 4.2: Edit existing row's burstTime
   // =========================================================
   it("updates an existing row's burstTime to a new valid value [4.2]", () => {
-    const initial: ProcessInput[] = [{ id: 'P1', name: 'Compile', arrivalTime: 1, burstTime: 3 }];
+    const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3 }];
     render(<ControlledProcessTable initial={initial} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
@@ -60,8 +69,8 @@ describe('ProcessTable', () => {
   // =========================================================
   it('removes a row from the table and from the onChange output [4.3]', () => {
     const initial: ProcessInput[] = [
-      { id: 'P1', name: 'Compile', arrivalTime: 1, burstTime: 3 },
-      { id: 'P2', name: 'Render', arrivalTime: 2, burstTime: 4 },
+      { id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3 },
+      { id: 'P2', name: 'P2', arrivalTime: 2, burstTime: 4 },
     ];
     const handleChange = vi.fn();
 
@@ -74,6 +83,7 @@ describe('ProcessTable', () => {
             handleChange(updated);
             setProcesses(updated);
           }}
+          colorMap={new Map()}
         />
       );
     }
@@ -84,28 +94,28 @@ describe('ProcessTable', () => {
     fireEvent.click(within(firstRow).getByRole('button', { name: 'Eliminar' }));
 
     expect(handleChange).toHaveBeenCalledWith([initial[1]]);
-    expect(screen.queryByText('Compile')).toBeNull();
-    expect(screen.getByText('Render')).toBeTruthy();
+    expect(screen.queryByText('P1')).toBeNull();
+    expect(screen.getByText('P2')).toBeTruthy();
   });
 
   // =========================================================
-  // Task 4.4: Reject non-positive arrivalTime
+  // Task 4.4: Accept arrivalTime = 0, reject only negative
   // =========================================================
-  it('rejects arrivalTime = 0 or negative with a validation error and does not add the row [4.4]', () => {
+  it('accepts arrivalTime = 0 and rejects negative with a validation error [4.4]', () => {
     const handleChange = vi.fn();
-    render(<ProcessTable processes={[]} onChange={handleChange} />);
+    render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
 
-    fillAddForm({ id: 'P1', name: 'Compile', arrivalTime: '0', burstTime: '5' });
+    fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/arrivalTime/i);
-    expect(handleChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(handleChange).toHaveBeenCalledTimes(1);
 
-    fillAddForm({ arrivalTime: '-3' });
+    fillAddForm({ id: 'P2', arrivalTime: '-3', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/arrivalTime/i);
-    expect(handleChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/llegada/i);
+    expect(handleChange).toHaveBeenCalledTimes(1);
   });
 
   // =========================================================
@@ -113,34 +123,23 @@ describe('ProcessTable', () => {
   // =========================================================
   it('rejects non-numeric burstTime with a validation error and does not add the row [4.5]', () => {
     const handleChange = vi.fn();
-    render(<ProcessTable processes={[]} onChange={handleChange} />);
+    render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
 
-    fillAddForm({ id: 'P1', name: 'Compile', arrivalTime: '1', burstTime: 'abc' });
+    fillAddForm({ id: 'P1', arrivalTime: '1', burstTime: 'abc' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/burstTime/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/ráfaga/i);
     expect(handleChange).not.toHaveBeenCalled();
   });
 
   // =========================================================
-  // Task 4.6: Reject empty id or name
+  // Task 4.6: Reject empty id (Proceso)
   // =========================================================
-  it('rejects an empty id with a validation error and does not add the row [4.6]', () => {
+  it('rejects an empty process name/id with a validation error and does not add the row [4.6]', () => {
     const handleChange = vi.fn();
-    render(<ProcessTable processes={[]} onChange={handleChange} />);
+    render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
 
-    fillAddForm({ name: 'Compile', arrivalTime: '1', burstTime: '5' });
-    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
-
-    expect(screen.getByRole('alert').textContent).toMatch(/id/i);
-    expect(handleChange).not.toHaveBeenCalled();
-  });
-
-  it('rejects an empty name with a validation error and does not add the row [4.6]', () => {
-    const handleChange = vi.fn();
-    render(<ProcessTable processes={[]} onChange={handleChange} />);
-
-    fillAddForm({ id: 'P1', arrivalTime: '1', burstTime: '5' });
+    fillAddForm({ arrivalTime: '1', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
     expect(screen.getByRole('alert').textContent).toMatch(/nombre/i);
@@ -154,9 +153,9 @@ describe('ProcessTable', () => {
   // =========================================================
   it('saving an edit after deleting a different row updates the correct process, not a shifted one', () => {
     const initial: ProcessInput[] = [
-      { id: 'P1', name: 'Compile', arrivalTime: 1, burstTime: 3 },
-      { id: 'P2', name: 'Render', arrivalTime: 2, burstTime: 4 },
-      { id: 'P3', name: 'Link', arrivalTime: 3, burstTime: 5 },
+      { id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3 },
+      { id: 'P2', name: 'P2', arrivalTime: 2, burstTime: 4 },
+      { id: 'P3', name: 'P3', arrivalTime: 3, burstTime: 5 },
     ];
     const handleChange = vi.fn();
 
@@ -169,6 +168,7 @@ describe('ProcessTable', () => {
             handleChange(updated);
             setProcesses(updated);
           }}
+          colorMap={new Map()}
         />
       );
     }
@@ -185,31 +185,298 @@ describe('ProcessTable', () => {
 
     const finalProcesses = handleChange.mock.calls[handleChange.mock.calls.length - 1][0] as ProcessInput[];
     expect(finalProcesses).toEqual([
-      { id: 'P2', name: 'Render', arrivalTime: 2, burstTime: 99 },
-      { id: 'P3', name: 'Link', arrivalTime: 3, burstTime: 5 },
+      { id: 'P2', name: 'P2', arrivalTime: 2, burstTime: 99, queue: 'SJF' },
+      { id: 'P3', name: 'P3', arrivalTime: 3, burstTime: 5 },
     ]);
   });
 
   it('rejects adding a process whose id already exists', () => {
-    const initial: ProcessInput[] = [{ id: 'P1', name: 'Compile', arrivalTime: 1, burstTime: 3 }];
+    const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3 }];
     const handleChange = vi.fn();
-    render(<ProcessTable processes={initial} onChange={handleChange} />);
+    render(<ProcessTable processes={initial} onChange={handleChange} colorMap={new Map()} />);
 
-    fillAddForm({ id: 'P1', name: 'Duplicate', arrivalTime: '1', burstTime: '5' });
+    fillAddForm({ id: 'P1', arrivalTime: '1', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/id/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/ya existe/i);
     expect(handleChange).not.toHaveBeenCalled();
   });
 
   it('rejects non-finite values like "Infinity" for arrivalTime/burstTime', () => {
     const handleChange = vi.fn();
-    render(<ProcessTable processes={[]} onChange={handleChange} />);
+    render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
 
-    fillAddForm({ id: 'P1', name: 'Compile', arrivalTime: 'Infinity', burstTime: '5' });
+    fillAddForm({ id: 'P1', arrivalTime: 'Infinity', burstTime: '5' });
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
 
-    expect(screen.getByRole('alert').textContent).toMatch(/arrivalTime/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/llegada/i);
     expect(handleChange).not.toHaveBeenCalled();
+  });
+
+  // =========================================================
+  // Multi-op I/O list editor
+  // =========================================================
+  describe('multi-op I/O list editor', () => {
+    it('adding 3 io operations to a process carries all of them through to onChange', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+
+      addIoOpRow(addContainer, '', 1, '2', '3');
+      addIoOpRow(addContainer, '', 2, '5', '4');
+      addIoOpRow(addContainer, '', 3, '8', '2');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        {
+          id: 'P1',
+          name: 'P1',
+          arrivalTime: 0,
+          burstTime: 10,
+          queue: 'SJF',
+          ioOperations: [
+            { after: 2, duration: 3 },
+            { after: 5, duration: 4 },
+            { after: 8, duration: 2 },
+          ],
+        },
+      ]);
+    });
+
+    it('leaving the io operations list empty produces ioOperations undefined', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '1', burstTime: '5' });
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        { id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 5, queue: 'SJF', ioOperations: undefined },
+      ]);
+    });
+
+    it('rejects an io operation row with only "after" filled (duration blank), mentioning both fields are required', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, '2', undefined);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/momento.*duración|duración.*momento/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects an io operation row with only "duration" filled (after blank), mentioning both fields are required', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, undefined, '3');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/momento.*duración|duración.*momento/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-numeric "after" value, mentioning the io moment', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, 'abc', '3');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/momento/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects an "after" value greater than burstTime, mentioning the io moment', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '5' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, '9', '3');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/momento/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-numeric "duration" value, mentioning the io duration', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, '2', 'xyz');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/duración/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('rejects two io operations sharing the same "after" value', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, '2', '3');
+      addIoOpRow(addContainer, '', 2, '2', '5');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(screen.getByRole('alert').textContent).toMatch(/repetir/i);
+      expect(handleChange).not.toHaveBeenCalled();
+    });
+
+    it('removing an io operation row via the "×" button before submit excludes it from onChange', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '10' });
+      const addContainer = screen.getByTestId('add-io-ops');
+      addIoOpRow(addContainer, '', 1, '2', '3');
+      addIoOpRow(addContainer, '', 2, '5', '4');
+
+      fireEvent.click(screen.getByLabelText('Eliminar operación de E/S 1'));
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        { id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 10, queue: 'SJF', ioOperations: [{ after: 5, duration: 4 }] },
+      ]);
+    });
+
+    it('displays a compact multi-op summary in the table for a process with io operations', () => {
+      const initial: ProcessInput[] = [
+        {
+          id: 'P1',
+          name: 'P1',
+          arrivalTime: 0,
+          burstTime: 10,
+          ioOperations: [{ after: 2, duration: 3 }, { after: 5, duration: 4 }],
+        },
+      ];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      const dataRow = screen.getAllByRole('row')[1];
+      expect(within(dataRow).getByText('2→3, 5→4')).toBeTruthy();
+    });
+
+    it('displays a dash summary for a process without any io operations', () => {
+      const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 10 }];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      const dataRow = screen.getAllByRole('row')[1];
+      expect(within(dataRow).getByText('—')).toBeTruthy();
+    });
+
+    it('displays a single-op summary for a legacy process using ioBurstTime/ioTriggerAfter', () => {
+      const initial: ProcessInput[] = [
+        { id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 10, ioBurstTime: 4, ioTriggerAfter: 3 },
+      ];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      const dataRow = screen.getAllByRole('row')[1];
+      expect(within(dataRow).getByText('3→4')).toBeTruthy();
+    });
+
+    it('editing a legacy process (ioBurstTime/ioTriggerAfter) pre-populates the io operations list with one row', () => {
+      const initial: ProcessInput[] = [
+        { id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 10, ioBurstTime: 4, ioTriggerAfter: 3 },
+      ];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+
+      expect((screen.getByLabelText('Editar Tras (ms) 1') as HTMLInputElement).value).toBe('3');
+      expect((screen.getByLabelText('Editar Duración (ms) 1') as HTMLInputElement).value).toBe('4');
+    });
+  });
+
+  // =========================================================
+  // Process color dot (swatch) — shared colorMap
+  // =========================================================
+  it('renders a colored swatch next to the process using the color from colorMap', () => {
+    const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 5 }];
+    const colorMap = new Map([['P1', 'var(--series-3)']]);
+    const { container } = render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={colorMap} />);
+
+    const dot = container.querySelector('.process-color-dot');
+    expect(dot).toBeTruthy();
+    expect((dot as HTMLElement).style.background).toBe('var(--series-3)');
+  });
+
+  // =========================================================
+  // MLQ queue assignment (Cola)
+  // =========================================================
+  describe('MLQ queue assignment', () => {
+    it('defaults the queue selector to SJF when not touched', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '5' });
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        { id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 5, queue: 'SJF', ioOperations: undefined },
+      ]);
+    });
+
+    it('adding a process with queue="RR" carries it through to onChange', () => {
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={[]} onChange={handleChange} colorMap={new Map()} />);
+
+      fillAddForm({ id: 'P1', arrivalTime: '0', burstTime: '5' });
+      fireEvent.change(screen.getByLabelText('Nueva cola'), { target: { value: 'RR' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Agregar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        { id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 5, queue: 'RR', ioOperations: undefined },
+      ]);
+    });
+
+    it("shows the process's current queue assignment in the table", () => {
+      const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 5, queue: 'RR' }];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      const dataRow = screen.getAllByRole('row')[1];
+      expect(within(dataRow).getByText('RR')).toBeTruthy();
+    });
+
+    it('defaults the table display to SJF for a process with no explicit queue', () => {
+      const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 0, burstTime: 5 }];
+      render(<ProcessTable processes={initial} onChange={vi.fn()} colorMap={new Map()} />);
+
+      const dataRow = screen.getAllByRole('row')[1];
+      expect(within(dataRow).getByText('SJF')).toBeTruthy();
+    });
+
+    it("editing an existing process's queue updates it via onChange", () => {
+      const initial: ProcessInput[] = [{ id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3, queue: 'SJF' }];
+      const handleChange = vi.fn();
+      render(<ProcessTable processes={initial} onChange={handleChange} colorMap={new Map()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+      fireEvent.change(screen.getByLabelText('Editar cola'), { target: { value: 'RR' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+      expect(handleChange).toHaveBeenCalledWith([
+        { id: 'P1', name: 'P1', arrivalTime: 1, burstTime: 3, queue: 'RR', ioOperations: undefined },
+      ]);
+    });
   });
 });

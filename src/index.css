@@ -4,12 +4,40 @@
   --bg: #fff;
   --border: #e5e4e7;
   --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
+  --accent: #db2777;
+  --accent-bg: rgba(219, 39, 119, 0.1);
+  --accent-border: rgba(219, 39, 119, 0.5);
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --danger: #b3261e;
+  --danger-bg: rgba(179, 38, 30, 0.08);
+
+  --page-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --text-strong: #1e293b;
+  --text-muted: #64748b;
+  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+
+  --accent-sjf: #a855f7;
+  --accent-sjf-bg: #f3e8ff;
+  --accent-rr: #3b82f6;
+  --accent-rr-bg: #dbeafe;
+  --accent-io: #10b981;
+  --accent-io-bg: #d1fae5;
+  --accent-cpu: #f97316;
+  --accent-cpu-bg: #ffedd5;
+
+  --series-1: #e87ba4;
+  --series-2: #008300;
+  --series-3: #4a3aa7;
+  --series-4: #e34948;
+  --series-5: #2a78d6;
+  --series-6: #eb6834;
+  --series-7: #1baf7a;
+  --series-8: #eda100;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -17,7 +45,7 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -27,26 +55,6 @@
 
   @media (max-width: 1024px) {
     font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
   }
 }
 
@@ -75,6 +83,7 @@ h2 {
 
 h1 {
   font-size: 56px;
+  line-height: 1.2;
   letter-spacing: -1.68px;
   margin: 32px 0;
   @media (max-width: 1024px) {
