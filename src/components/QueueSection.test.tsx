@@ -13,35 +13,61 @@ describe('QueueSection', () => {
     expect(getByText('Cola — SJF')).toBeTruthy();
   });
 
-  it('renders a numbered ruler', () => {
-    const slices: QueueSlice[] = [{ processId: 'A', start: 0, end: 5 }];
+  it('uses row layout automatically for sjf accent (ready queue)', () => {
+    const slices: QueueSlice[] = [
+      { processId: 'A', start: 0, end: 0 },
+      { processId: 'B', start: 1, end: 5 },
+    ];
     const { container } = render(
-      <QueueSection title="Cola — SJF" slices={slices} colorMap={new Map([['A', 'var(--series-1)']])} accent="sjf" />,
+      <QueueSection title="Cola — SJF" slices={slices} colorMap={new Map([['A', 'var(--series-1)'], ['B', 'var(--series-2)']])} accent="sjf" />,
     );
-    expect(container.querySelectorAll('.queue-ruler-tick').length).toBeGreaterThan(0);
+
+    // Row layout: no ruler, flat row, fixed-size blocks
+    expect(container.querySelectorAll('.queue-ruler-tick')).toHaveLength(0);
+    const blocks = container.querySelectorAll('.queue-block');
+    expect(blocks).toHaveLength(2);
+
+    // All blocks have the same fixed width
+    const widths = Array.from(blocks).map(b => (b as HTMLElement).style.width);
+    expect(new Set(widths).size).toBe(1);
   });
 
-  it('renders one pill per slice with correct proportional width', () => {
+  it('uses row layout automatically for rr accent (ready queue)', () => {
+    const slices: QueueSlice[] = [{ processId: 'P1', start: 0, end: 0 }];
+    const { container } = render(
+      <QueueSection title="Cola — RR" slices={slices} colorMap={new Map([['P1', 'var(--series-1)']])} accent="rr" />,
+    );
+
+    expect(container.querySelector('.queue-block')).toBeTruthy();
+    expect(container.querySelectorAll('.queue-ruler-tick')).toHaveLength(0);
+  });
+
+  it('uses timeline layout for io accent with ruler and proportional widths', () => {
     const slices: QueueSlice[] = [
       { processId: 'A', start: 0, end: 2 },
       { processId: 'B', start: 2, end: 10 },
     ];
-    const colorMap = new Map([['A', 'var(--series-1)'], ['B', 'var(--series-2)']]);
-    const { container } = render(<QueueSection title="Cola — SJF" slices={slices} colorMap={colorMap} accent="sjf" />);
+    const { container } = render(
+      <QueueSection title="Cola — I/O" slices={slices} colorMap={new Map([['A', 'var(--series-1)'], ['B', 'var(--series-2)']])} accent="io" />,
+    );
 
-    const pills = container.querySelectorAll('[data-slice]');
+    // Timeline layout: has ruler, proportional pills
+    expect(container.querySelectorAll('.queue-ruler-tick').length).toBeGreaterThan(0);
+    const pills = container.querySelectorAll('.queue-pill');
     expect(pills).toHaveLength(2);
+
     const widths = Array.from(pills).map(p => parseFloat(p.getAttribute('data-width') || '0'));
     expect(widths[0] / widths[1]).toBeCloseTo(2 / 8, 10);
   });
 
-  it('packs overlapping slices into multiple tracks', () => {
+  it('uses timeline layout for cpu accent with possible multiple tracks', () => {
     const slices: QueueSlice[] = [
       { processId: 'A', start: 0, end: 5 },
       { processId: 'B', start: 1, end: 4 },
     ];
-    const colorMap = new Map([['A', 'var(--series-1)'], ['B', 'var(--series-2)']]);
-    const { container } = render(<QueueSection title="Cola — SJF" slices={slices} colorMap={colorMap} accent="sjf" />);
+    const { container } = render(
+      <QueueSection title="Cola — CPU" slices={slices} colorMap={new Map([['A', 'var(--series-1)'], ['B', 'var(--series-2)']])} accent="cpu" />,
+    );
 
     const tracks = new Set(
       Array.from(container.querySelectorAll('[data-slice]')).map(el => el.getAttribute('data-track')),
@@ -49,7 +75,7 @@ describe('QueueSection', () => {
     expect(tracks.size).toBe(2);
   });
 
-  it('renders the ruler/title with no pills for an empty slices array without throwing', () => {
+  it('renders without throwing for an empty slices array', () => {
     let container!: HTMLElement;
     let getByText!: (text: string) => HTMLElement;
     expect(() => {
@@ -62,15 +88,15 @@ describe('QueueSection', () => {
 
   it('picks a readably-contrasting text color for both a light and a dark slice background', () => {
     const slices: QueueSlice[] = [
-      { processId: 'Y', start: 0, end: 2 }, // yellow, light
-      { processId: 'V', start: 2, end: 4 }, // violet, dark
+      { processId: 'Y', start: 0, end: 0 }, // yellow, light
+      { processId: 'V', start: 1, end: 5 },   // violet, dark
     ];
     const colorMap = new Map([['Y', '#eda100'], ['V', '#4a3aa7']]);
     const { container } = render(<QueueSection title="Cola — SJF" slices={slices} colorMap={colorMap} accent="sjf" />);
 
-    const pills = container.querySelectorAll('[data-slice]');
-    expect(pills[0].getAttribute('data-text-color')).toBe('dark');
-    expect(pills[1].getAttribute('data-text-color')).toBe('light');
+    const blocks = container.querySelectorAll('[data-slice]');
+    expect(blocks[0].getAttribute('data-text-color')).toBe('dark');
+    expect(blocks[1].getAttribute('data-text-color')).toBe('light');
   });
 
   it.each([
