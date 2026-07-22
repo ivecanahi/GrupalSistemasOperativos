@@ -662,18 +662,17 @@
 .accent-cpu { border-left: 4px solid var(--accent-cpu); }
 .accent-cpu .queue-section-title { color: var(--accent-cpu); }
 
-/* Section 3 — horizontal grid: colas y Gantt lado a lado */
+/* Section 3 — full-width rows: each queue / Gantt gets its own line */
 .section-stack {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 20px;
-  align-items: stretch;
 }
 
 .section-stack > .queue-section,
 .section-stack > .card-v2 {
-  flex: 1 1 420px;
-  min-width: 320px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Header — two static SJF/RR descriptive info cards */
