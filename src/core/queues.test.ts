@@ -13,7 +13,7 @@ describe('buildQueueTimelines', () => {
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
     expect(queues.cpu).toEqual([{ processId: 'A', start: 0, end: 5 }]);
-    expect(queues.ready).toEqual([]);
+    expect(queues.ready).toEqual([{ processId: 'A', start: 0, end: 0 }]);
     expect(queues.io).toEqual([]);
   });
 
@@ -30,7 +30,10 @@ describe('buildQueueTimelines', () => {
 
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
-    expect(queues.ready).toEqual([{ processId: 'B', start: 0, end: 5 }]);
+    expect(queues.ready).toEqual([
+      { processId: 'A', start: 0, end: 0 },
+      { processId: 'B', start: 0, end: 5 },
+    ]);
   });
 
   it('process with io interval produces the correct io slice, copied from the engine', () => {
@@ -81,7 +84,9 @@ describe('buildQueueTimelines', () => {
     // gap between 2 (end of first A slice) and 4 (start of second A slice)
     // B arrives at 1 but its own first slice starts at 2 -> gap [1,2)
     expect(queues.ready).toEqual([
+      { processId: 'A', start: 0, end: 0 },
       { processId: 'A', start: 2, end: 4 },
+      { processId: 'A', start: 6, end: 6 },
       { processId: 'B', start: 1, end: 2 },
     ]);
   });
@@ -99,8 +104,9 @@ describe('buildQueueTimelines', () => {
 
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
-    // gap [2,5) is fully covered by the io interval -> no leftover ready slice
-    expect(queues.ready).toEqual([]);
+    // A arrives at 0 and starts immediately -> instant ready slice [0,0)
+    // gap [2,5) is fully covered by the io interval -> no other ready slice
+    expect(queues.ready).toEqual([{ processId: 'A', start: 0, end: 0 }]);
     expect(queues.io).toEqual([{ processId: 'A', start: 2, end: 5 }]);
   });
 
@@ -120,8 +126,9 @@ describe('buildQueueTimelines', () => {
 
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
-    // A's gap [2,12) starts exactly at its io interval's start -> no ready slice for A
-    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([]);
+    // A arrives at 0 and starts immediately -> instant ready slice [0,0)
+    // A's gap [2,12) starts exactly at its io interval's start -> no other ready slice for A
+    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }]);
     expect(queues.io).toEqual([{ processId: 'A', start: 2, end: 12 }]);
   });
 
@@ -142,9 +149,10 @@ describe('buildQueueTimelines', () => {
 
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
+    // A arrives at 0 and starts immediately -> instant ready slice [0,0)
     // Both gaps ([2,5) and [8,12)) are fully covered by their respective
-    // io intervals -> no leftover ready slices for A
-    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([]);
+    // io intervals -> no other ready slices for A
+    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }]);
     expect(queues.io).toEqual(ioTimeline);
   });
 
@@ -162,7 +170,8 @@ describe('buildQueueTimelines', () => {
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
     expect(queues.io).toEqual([{ processId: 'A', start: 5, end: 9 }]);
-    // A has no gap after its only (last) slice, so no ready entries for A
-    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([]);
+    // A arrives at 0 and starts immediately -> instant ready slice [0,0)
+    // A has no gap after its only (last) slice, so no other ready entries for A
+    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }]);
   });
 });

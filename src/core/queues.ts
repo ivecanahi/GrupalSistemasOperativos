@@ -38,7 +38,7 @@ export function buildQueueTimelines(
 
     let cursor = p.arrivalTime;
     for (const slice of ownSlices) {
-      if (slice.start > cursor) {
+      if (slice.start >= cursor) {
         const ioAtCursor = ownIo.find(s => s.start === cursor);
         if (ioAtCursor) {
           if (ioAtCursor.end < slice.start) {

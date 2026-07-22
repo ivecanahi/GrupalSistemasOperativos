@@ -56,10 +56,39 @@ export function QueueSection({ title, slices, colorMap, accent }: QueueSectionPr
           <div className="queue-section-row" style={{ height: `${trackCount * BAND_HEIGHT}px` }}>
             {packed.map((s, i) => {
               const color = colorMap.get(s.processId) ?? 'var(--series-1)';
-              const width = (s.end - s.start) * scale;
+              const duration = s.end - s.start;
+              const isInstant = duration < 0.001;
+              const width = isInstant ? 0 : (duration * scale);
               const left = s.start * scale;
               const textColor = pickTextColor(color);
-              return (
+              return isInstant ? (
+                <div
+                  key={i}
+                  className="queue-pill queue-pill-instant"
+                  data-slice
+                  data-instant
+                  data-color={color}
+                  data-track={s.track}
+                  data-text-color={textColor}
+                  title={`${s.processId} llega en t=${s.start}`}
+                  style={{
+                    left: `calc(${left}% - 4px)`,
+                    top: `${s.track * BAND_HEIGHT + 4}px`,
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: color,
+                    color: textColor === 'dark' ? '#08060d' : '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '9px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {s.processId}
+                </div>
+              ) : (
                 <div
                   key={i}
                   className="queue-pill"

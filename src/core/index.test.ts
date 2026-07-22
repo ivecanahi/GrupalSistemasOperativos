@@ -116,7 +116,7 @@ describe('schedule() — dispatcher', () => {
 
     expect(result.queues).toBeDefined();
     expect(result.queues!.cpu).toEqual([{ processId: 'A', start: 0, end: 5 }]);
-    expect(result.queues!.ready).toEqual([]);
+    expect(result.queues!.ready).toEqual([{ processId: 'A', start: 0, end: 0 }]);
     expect(result.queues!.io).toEqual([{ processId: 'A', start: 5, end: 9 }]);
   });
 
