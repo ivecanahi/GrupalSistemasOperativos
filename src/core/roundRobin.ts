@@ -6,6 +6,8 @@ interface PendingIo {
   readyAt: number;
   /** Remaining time to run in the NEXT phase once (re-)enqueued; 0 means the process is done once this I/O completes (no further CPU phase). */
   nextRemaining: number;
+  /** Monotonic order at which this process entered I/O; used for FIFO tie-break on equal readyAt. */
+  order: number;
 }
 
 interface ReadyCandidate {
@@ -13,6 +15,8 @@ interface ReadyCandidate {
   readyTime: number;
   /** Remaining time to run in the NEXT phase once (re-)enqueued, or undefined for fresh arrivals (uses existing `remaining`). */
   resetRemaining?: number;
+  /** Monotonic order at which this process became a candidate (fresh arrival order or I/O entry order). */
+  order: number;
 }
 
 /**
@@ -85,6 +89,8 @@ export function runRoundRobin(
 
   const pendingIo: PendingIo[] = [];
 
+  let nextOrder = 0; // monotonic counter for FIFO tie-breaking (fresh arrivals + I/O entry)
+
   const completed = new Set<string>();
   const firstStart = new Map<string, number>();
   const finishTime = new Map<string, number>();
@@ -106,7 +112,7 @@ export function runRoundRobin(
     while (nextArrivalIdx < sorted.length && sorted[nextArrivalIdx].arrivalTime <= now) {
       const arr = sorted[nextArrivalIdx];
       if (!completed.has(arr.id)) {
-        candidates.push({ id: arr.id, readyTime: arr.arrivalTime });
+        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, order: nextOrder++ });
       }
       nextArrivalIdx++;
     }
@@ -115,7 +121,7 @@ export function runRoundRobin(
     for (const io of pendingIo) {
       if (io.readyAt <= now) {
         if (io.nextRemaining > 0) {
-          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining });
+          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, order: io.order });
         } else {
           completed.add(io.processId);
           finishTime.set(io.processId, io.readyAt);
@@ -127,7 +133,7 @@ export function runRoundRobin(
     pendingIo.length = 0;
     pendingIo.push(...stillPending);
 
-    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : (a.id < b.id ? -1 : 1)));
+    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.order - b.order));
 
     for (const c of candidates) {
       if (c.resetRemaining !== undefined) {
@@ -191,14 +197,14 @@ export function runRoundRobin(
         ioTimeline.push({ processId: pid, start: currentTime, end: ioReadyAt });
 
         if (cpuConsumed.get(pid) === p.burstTime) {
-          pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0 });
+          pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0, order: nextOrder++ });
         } else {
           const nextIdx = idx + 1;
           const nextOp = nextIdx < processOps.length ? processOps[nextIdx] : undefined;
           const nextRemaining = nextOp
             ? nextOp.after - cpuConsumed.get(pid)!
             : p.burstTime - cpuConsumed.get(pid)!;
-          pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining });
+          pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining, order: nextOrder++ });
         }
         // Not enqueued now, and not completed now — even if nextRemaining
         // === 0, completion happens later inside enqueueReady when
