@@ -21,13 +21,16 @@ interface PendingIo {
   readyAt: number;
   /** Remaining time to run in the NEXT phase once (re-)enqueued; 0 means the process is done once this I/O completes. */
   nextRemaining: number;
+  /** Monotonic order at which this process entered I/O; used for FIFO tie-break on equal readyAt. */
+  order: number;
 }
 
 interface ReadyCandidate {
   id: string;
   readyTime: number;
   resetRemaining?: number;
-  fifoOrder: number; // insertion order so equal-readyTime ties break FIFO, not by id
+  /** Monotonic order (fresh arrival order or I/O entry order) for FIFO tie-break. */
+  order: number;
 }
 
 /**
@@ -190,9 +193,9 @@ export function runMLQ(
   const rrPendingIo: PendingIo[] = [];
   const rrCompleted = new Set<string>();
   let rrCompletedCount = 0;
-  let nextFifoOrder = 0; // monotonic counter for FIFO tie-breaking
+  let nextOrder = 0; // monotonic counter for FIFO tie-breaking (fresh arrivals + I/O entry)
 
-  /** Merges due fresh arrivals and I/O-returns into the RR fifo by (readyTime, fifoOrder) —
+  /** Merges due fresh arrivals and I/O-returns into the RR fifo by (readyTime, order) —
    *  FIFO tie-break so the process that entered I/O earlier returns earlier. */
   function rrEnqueueReady(now: number): void {
     const candidates: ReadyCandidate[] = [];
@@ -200,7 +203,7 @@ export function runMLQ(
     while (rrNextArrivalIdx < rrSorted.length && rrSorted[rrNextArrivalIdx].arrivalTime <= now) {
       const arr = rrSorted[rrNextArrivalIdx];
       if (!rrCompleted.has(arr.id)) {
-        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, fifoOrder: nextFifoOrder++ });
+        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, order: nextOrder++ });
       }
       rrNextArrivalIdx++;
     }
@@ -209,7 +212,7 @@ export function runMLQ(
     for (const io of rrPendingIo) {
       if (io.readyAt <= now) {
         if (io.nextRemaining > 0) {
-          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, fifoOrder: nextFifoOrder++ });
+          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, order: io.order });
         } else {
           rrCompleted.add(io.processId);
           finishTime.set(io.processId, io.readyAt);
@@ -222,7 +225,7 @@ export function runMLQ(
     rrPendingIo.length = 0;
     rrPendingIo.push(...stillPending);
 
-    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.fifoOrder - b.fifoOrder));
+    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.order - b.order));
 
     for (const c of candidates) {
       if (c.resetRemaining !== undefined) {
@@ -262,14 +265,14 @@ export function runMLQ(
         ioTimeline.push({ processId: pid, start: newTime, end: ioReadyAt });
 
         if (rrCpuConsumed.get(pid) === p.burstTime) {
-          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0 });
+          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0, order: nextOrder++ });
         } else {
           const nextIdx = idx + 1;
           const nextOp = nextIdx < ops.length ? ops[nextIdx] : undefined;
           const nextRemaining = nextOp
             ? nextOp.after - rrCpuConsumed.get(pid)!
             : p.burstTime - rrCpuConsumed.get(pid)!;
-          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining });
+          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining, order: nextOrder++ });
         }
       } else {
         rrCompleted.add(pid);
