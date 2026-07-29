@@ -93,6 +93,10 @@ export function runMLQ(
       ? ops[st.opIndex].after - st.cpuConsumed
       : sjfProcesses[i].burstTime - st.cpuConsumed;
   };
+  const sjfRemainingWorkOf = (i: number): number => {
+    const st = sjfStates[i];
+    return sjfProcesses[i].burstTime - st.cpuConsumed;
+  };
   const sjfReadyTimeOf = (i: number): number => sjfStates[i].nextReadyTime;
 
   function sjfReadyCandidates(currentTime: number): number[] {
@@ -108,7 +112,7 @@ export function runMLQ(
     let sel = ready[0];
     for (let k = 1; k < ready.length; k++) {
       const idx = ready[k];
-      const durCmp = sjfDurationOf(idx) - sjfDurationOf(sel);
+      const durCmp = sjfRemainingWorkOf(idx) - sjfRemainingWorkOf(sel);
       if (durCmp < 0) {
         sel = idx;
       } else if (durCmp === 0) {

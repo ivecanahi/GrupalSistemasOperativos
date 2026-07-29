@@ -95,6 +95,10 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       ? ops[st.opIndex].after - st.cpuConsumed
       : processes[i].burstTime - st.cpuConsumed;
   };
+  const remainingWorkOf = (i: number): number => {
+    const st = states[i];
+    return processes[i].burstTime - st.cpuConsumed;
+  };
   const readyTimeOf = (i: number): number => states[i].nextReadyTime;
 
   while (completedCount < n) {
@@ -118,7 +122,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       continue;
     }
 
-    const sel = selectShortest(ready, processes, durationOf, readyTimeOf);
+    const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf);
     const p = processes[sel];
     const st = states[sel];
     const ops = allOps[sel];
