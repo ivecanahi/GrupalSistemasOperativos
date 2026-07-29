@@ -27,6 +27,7 @@ interface ReadyCandidate {
   id: string;
   readyTime: number;
   resetRemaining?: number;
+  fifoOrder: number; // insertion order so equal-readyTime ties break FIFO, not by id
 }
 
 /**
@@ -189,15 +190,17 @@ export function runMLQ(
   const rrPendingIo: PendingIo[] = [];
   const rrCompleted = new Set<string>();
   let rrCompletedCount = 0;
+  let nextFifoOrder = 0; // monotonic counter for FIFO tie-breaking
 
-  /** Merges due fresh arrivals and I/O-returns into the RR fifo by (readyTime, id) — same Silberschatz ordering as roundRobin.ts. */
+  /** Merges due fresh arrivals and I/O-returns into the RR fifo by (readyTime, fifoOrder) —
+   *  FIFO tie-break so the process that entered I/O earlier returns earlier. */
   function rrEnqueueReady(now: number): void {
     const candidates: ReadyCandidate[] = [];
 
     while (rrNextArrivalIdx < rrSorted.length && rrSorted[rrNextArrivalIdx].arrivalTime <= now) {
       const arr = rrSorted[rrNextArrivalIdx];
       if (!rrCompleted.has(arr.id)) {
-        candidates.push({ id: arr.id, readyTime: arr.arrivalTime });
+        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, fifoOrder: nextFifoOrder++ });
       }
       rrNextArrivalIdx++;
     }
@@ -206,7 +209,7 @@ export function runMLQ(
     for (const io of rrPendingIo) {
       if (io.readyAt <= now) {
         if (io.nextRemaining > 0) {
-          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining });
+          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, fifoOrder: nextFifoOrder++ });
         } else {
           rrCompleted.add(io.processId);
           finishTime.set(io.processId, io.readyAt);
@@ -219,7 +222,7 @@ export function runMLQ(
     rrPendingIo.length = 0;
     rrPendingIo.push(...stillPending);
 
-    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : (a.id < b.id ? -1 : 1)));
+    candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.fifoOrder - b.fifoOrder));
 
     for (const c of candidates) {
       if (c.resetRemaining !== undefined) {
