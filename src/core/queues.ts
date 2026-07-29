@@ -26,13 +26,14 @@ export function buildQueueTimelines(
 
   const io: QueueSlice[] = ioTimeline.map(s => ({ ...s }));
 
+  // Map process id -> arrivalTime for quick lookup
+  const arrivalMap = new Map(processes.map(p => [p.id, p.arrivalTime]));
+
   const ready: QueueSlice[] = [];
   for (const p of processes) {
     const ownSlices = cpuTimeline
       .filter(s => s.processId === p.id)
       .sort((a, b) => a.start - b.start);
-
-    if (ownSlices.length === 0) continue;
 
     const ownIo = io.filter(s => s.processId === p.id);
 
@@ -51,6 +52,17 @@ export function buildQueueTimelines(
       cursor = slice.end;
     }
   }
+
+  // Sort: fresh arrivals (start === arrivalTime) first, then I/O returns (start > arrivalTime)
+  ready.sort((a, b) => {
+    const aArrival = arrivalMap.get(a.processId) ?? 0;
+    const bArrival = arrivalMap.get(b.processId) ?? 0;
+    const aFresh = a.start === aArrival;
+    const bFresh = b.start === bArrival;
+    if (aFresh && !bFresh) return -1;
+    if (!aFresh && bFresh) return 1;
+    return a.start - b.start || a.end - b.end;
+  });
 
   return { cpu, ready, io };
 }

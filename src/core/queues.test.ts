@@ -85,9 +85,9 @@ describe('buildQueueTimelines', () => {
     // B arrives at 1 but its own first slice starts at 2 -> gap [1,2)
     expect(queues.ready).toEqual([
       { processId: 'A', start: 0, end: 0 },
+      { processId: 'B', start: 1, end: 2 },
       { processId: 'A', start: 2, end: 4 },
       { processId: 'A', start: 6, end: 6 },
-      { processId: 'B', start: 1, end: 2 },
     ]);
   });
 

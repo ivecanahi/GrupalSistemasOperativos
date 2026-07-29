@@ -336,4 +336,5 @@ describe('runSJF — Shortest Job First (non-preemptive)', () => {
       expect(rA.waitingTime).toBe(rA.turnaroundTime - 8 - 7);
     });
   });
+
 });
