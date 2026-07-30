@@ -11,33 +11,67 @@ import { normalizeIoOperations } from './ioOperations';
 
 // Estado interno de cada proceso durante la simulación
 interface ProcState {
-  index: number;           // Índice en el arreglo original
-  opIndex: number;         // Índice de la operación de E/S actual
-  cpuConsumed: number;     // Cuánto CPU ha consumido hasta ahora
-  stage: 'running' | 'done'; // Estado del proceso
-  nextReadyTime: number;   // Cuándo estará listo (arrival o fin de E/S)
-}
 
 // Selecciona el proceso con menor ráfaga restante entre los listos
 // Desempate: menor readyTime, luego menor id
+
+  index: number;
+  opIndex: number;
+  cpuConsumed: number;
+  stage: 'running' | 'done';
+  /**
+   * Gate for readiness while `stage === 'running'`: `arrivalTime` before the
+   * process has ever run, or the completion time of its most recent I/O
+   * wait once it has returned from one.
+   */
+  nextReadyTime: number;
+  /**
+   * Monotonic order for FIFO tie-breaking: set at arrival for fresh processes,
+   * and updated when entering I/O so processes returning from I/O keep their
+   * entry order (first-entered-I/O returns first when readyTimes collide).
+   */
+  fifoOrder: number;
+}
+
+/**
+ * Pick the shortest remaining CPU work among ready candidates.
+ * Ties broken by earliest readyTime.
+ * If both are fresh arrivals (never run before): ascending id.
+ * If one or both are I/O returnees: FIFO order (who entered I/O earlier).
+ */
 function selectShortest(
   ready: number[],
   processes: ProcessInput[],
-  durationOf: (i: number) => number,
+  remainingWorkOf: (i: number) => number,
   readyTimeOf: (i: number) => number,
+  fifoOrderOf: (i: number) => number,
+  hasRunBefore: (i: number) => boolean,
 ): number {
   let sel = ready[0];
   for (let i = 1; i < ready.length; i++) {
     const idx = ready[i];
-    const durCmp = durationOf(idx) - durationOf(sel);
+    const durCmp = remainingWorkOf(idx) - remainingWorkOf(sel);
     if (durCmp < 0) {
       sel = idx;
     } else if (durCmp === 0) {
       const readyCmp = readyTimeOf(idx) - readyTimeOf(sel);
       if (readyCmp < 0) {
         sel = idx;
-      } else if (readyCmp === 0 && processes[idx].id < processes[sel].id) {
-        sel = idx;
+      } else if (readyCmp === 0) {
+        const selFresh = !hasRunBefore(sel);
+        const idxFresh = !hasRunBefore(idx);
+        if (selFresh && idxFresh) {
+          // Both fresh: tie-break by id (spec requirement)
+          if (processes[idx].id < processes[sel].id) sel = idx;
+        } else {
+          // At least one I/O returnee: FIFO order wins
+          const fifoCmp = fifoOrderOf(idx) - fifoOrderOf(sel);
+          if (fifoCmp < 0) {
+            sel = idx;
+          } else if (fifoCmp === 0 && processes[idx].id < processes[sel].id) {
+            sel = idx;
+          }
+        }
       }
     }
   }
@@ -57,10 +91,16 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
   const n = processes.length;
   const allOps = processes.map(normalizeIoOperations); // Normaliza E/S de cada proceso
 
+
   // Inicializa estados: cada proceso comienza en su arrivalTime
+  let nextFifoOrder = 0;
   const states: ProcState[] = processes.map((p, i) => ({
-    index: i, opIndex: 0, cpuConsumed: 0,
-    stage: 'running', nextReadyTime: p.arrivalTime,
+    index: i,
+    opIndex: 0,
+    cpuConsumed: 0,
+    stage: 'running',
+    nextReadyTime: p.arrivalTime,
+    fifoOrder: nextFifoOrder++,
   }));
 
   let completedCount = 0;
@@ -81,6 +121,8 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
   };
   const remainingWorkOf = (i: number): number => processes[i].burstTime - states[i].cpuConsumed;
   const readyTimeOf = (i: number): number => states[i].nextReadyTime;
+  const fifoOrderOf = (i: number): number => states[i].fifoOrder;
+  const hasRunBefore = (i: number): boolean => states[i].cpuConsumed > 0;
 
   // Bucle principal: mientras queden procesos por completar
   while (completedCount < n) {
@@ -107,7 +149,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
     }
 
     // Selecciona el más corto y lo ejecuta hasta completar su fase actual
-    const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf);
+    const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf, fifoOrderOf, hasRunBefore);
     const p = processes[sel];
     const st = states[sel];
     const ops = allOps[sel];
@@ -135,6 +177,8 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
         completedCount++;
       } else {
         st.nextReadyTime = ioEnd; // Vuelve a la cola de listos después de la E/S
+        st.nextReadyTime = ioEnd;
+        st.fifoOrder = nextFifoOrder++; // Vuelve a la cola de listos después de la E/S
       }
     } else {
       st.stage = 'done';

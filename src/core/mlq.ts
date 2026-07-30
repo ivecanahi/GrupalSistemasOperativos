@@ -19,7 +19,11 @@ interface SjfProcState {
   opIndex: number;          // Índice de la operación E/S actual
   cpuConsumed: number;      // CPU consumido hasta ahora
   stage: 'running' | 'done';
-  nextReadyTime: number;    // Cuándo estará listo (arrival o fin de E/S)
+
+  /** Gate for readiness while `stage === 'running'` — mirrors sjf.ts's ProcState. */
+  nextReadyTime: number;
+  /** Monotonic order for FIFO tie-breaking (arrival / I/O return order). Mirrors sjf.ts. */
+  fifoOrder: number;
 }
 
 // Proceso haciendo E/S en la cola RR
@@ -68,8 +72,13 @@ export function runMLQ(
   // ──────────── ESTADO DE LA COLA SJF ────────────
   const sjfN = sjfProcesses.length;
   const sjfOps = sjfProcesses.map(normalizeIoOperations);
+  let nextSjfFifoOrder = 0;
   const sjfStates: SjfProcState[] = sjfProcesses.map(p => ({
-    opIndex: 0, cpuConsumed: 0, stage: 'running', nextReadyTime: p.arrivalTime,
+    opIndex: 0,
+    cpuConsumed: 0,
+    stage: 'running',
+    nextReadyTime: p.arrivalTime,
+    fifoOrder: nextSjfFifoOrder++,
   }));
   let sjfCompletedCount = 0;
 
@@ -79,6 +88,8 @@ export function runMLQ(
   };
   const sjfRemainingWorkOf = (i: number): number => sjfProcesses[i].burstTime - sjfStates[i].cpuConsumed;
   const sjfReadyTimeOf = (i: number): number => sjfStates[i].nextReadyTime;
+  const sjfFifoOrderOf = (i: number): number => sjfStates[i].fifoOrder;
+  const sjfHasRunBefore = (i: number): boolean => sjfStates[i].cpuConsumed > 0;
 
   function sjfReadyCandidates(currentTime: number): number[] {
     const ready: number[] = [];
@@ -96,8 +107,24 @@ export function runMLQ(
       if (durCmp < 0) sel = idx;
       else if (durCmp === 0) {
         const readyCmp = sjfReadyTimeOf(idx) - sjfReadyTimeOf(sel);
-        if (readyCmp < 0) sel = idx;
-        else if (readyCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) sel = idx;
+        if (readyCmp < 0) {
+          sel = idx;
+        } else if (readyCmp === 0) {
+          const selFresh = !sjfHasRunBefore(sel);
+          const idxFresh = !sjfHasRunBefore(idx);
+          if (selFresh && idxFresh) {
+            // Both fresh arrivals: tie-break by id (spec requirement)
+            if (sjfProcesses[idx].id < sjfProcesses[sel].id) sel = idx;
+          } else {
+            // At least one I/O returnee: FIFO order wins
+            const fifoCmp = sjfFifoOrderOf(idx) - sjfFifoOrderOf(sel);
+            if (fifoCmp < 0) {
+              sel = idx;
+            } else if (fifoCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) {
+              sel = idx;
+            }
+          }
+        }
       }
     }
     return sel;
@@ -121,8 +148,14 @@ export function runMLQ(
       ioTimeline.push({ processId: p.id, start: end, end: ioEnd });
       st.opIndex += 1;
       if (st.cpuConsumed === p.burstTime) {
-        st.stage = 'done'; finishTime.set(p.id, ioEnd); sjfCompletedCount++;
-      } else st.nextReadyTime = ioEnd;
+
+        st.stage = 'done';
+        finishTime.set(p.id, ioEnd);
+        sjfCompletedCount++;
+      } else {
+        st.nextReadyTime = ioEnd;
+        st.fifoOrder = nextSjfFifoOrder++; // record I/O entry order for FIFO tie-break on return
+      }
     } else {
       st.stage = 'done'; finishTime.set(p.id, end); sjfCompletedCount++;
     }
