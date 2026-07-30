@@ -179,7 +179,13 @@ function App() {
                 {algorithm === 'SJF' && <QueueSection title="Cola de listos (SJF)" slices={readySlices} colorMap={colorMap} accent="sjf" />}
                 {algorithm === 'RR' && <QueueSection title="Cola de listos (Round Robin)" slices={rrReady} colorMap={colorMap} accent="rr" />}
                 <QueueSection title="Cola de Operaciones de entrada/salida" slices={ioSlices} colorMap={colorMap} accent="io" />
+                {/* Cola de CPU: aquí se DIBUJA el timeline de ejecución de la CPU
+                    usando QueueSection con layout "timeline" (barras proporcionales).
+                    Se alimenta de result.queues.cpu (generado por buildQueueTimelines). */}
                 <QueueSection title="Cola de CPU" slices={cpuSlices} colorMap={colorMap} accent="cpu" />
+                {/* Diagrama de Gantt por proceso: se DIBUJA aquí el Gantt con una fila
+                    por proceso. Recibe result.timeline (los ExecutionSlice que produjo
+                    el motor de scheduling) y el colorMap compartido. */}
                 <section className="card-v2">
                   <PerProcessGantt timeline={result.timeline} colorMap={colorMap} hideLegend />
                 </section>
