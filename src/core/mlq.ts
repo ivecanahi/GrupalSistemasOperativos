@@ -1,51 +1,44 @@
+// ============================================================
+// ALGORITMO MLQ (Multilevel Queue) — SJF + RR con prioridad fija
+// ============================================================
+// MLQ combina dos colas: una SJF (no apropiativo) y una RR con
+// quantum fijo. Una cola tiene prioridad fija sobre la otra:
+// - Si la cola prioritaria tiene procesos listos, siempre gana la CPU.
+// - La otra cola solo corre cuando la prioritaria no tiene nada listo.
+// El bucle maestro despacha UNA unidad de trabajo a la vez y
+// reevalúa, evitando desalojo a mitad de un slice.
+
 import type {
-  ProcessInput,
-  SchedulingResult,
-  ExecutionSlice,
-  ProcessResult,
-  QueueSlice,
-  QueueAssignment,
+  ProcessInput, SchedulingResult, ExecutionSlice,
+  ProcessResult, QueueSlice, QueueAssignment,
 } from '../types/scheduling';
 import { normalizeIoOperations } from './ioOperations';
 
+// Estado interno para la cola SJF
 interface SjfProcState {
-  opIndex: number;
-  cpuConsumed: number;
+  opIndex: number;          // Índice de la operación E/S actual
+  cpuConsumed: number;      // CPU consumido hasta ahora
   stage: 'running' | 'done';
-  /** Gate for readiness while `stage === 'running'` — mirrors sjf.ts's ProcState. */
-  nextReadyTime: number;
+  nextReadyTime: number;    // Cuándo estará listo (arrival o fin de E/S)
 }
 
+// Proceso haciendo E/S en la cola RR
 interface PendingIo {
   processId: string;
   readyAt: number;
-  /** Remaining time to run in the NEXT phase once (re-)enqueued; 0 means the process is done once this I/O completes. */
-  nextRemaining: number;
-  /** Monotonic order at which this process entered I/O; used for FIFO tie-break on equal readyAt. */
-  order: number;
+  nextRemaining: number;    // CPU restante para la siguiente fase
+  order: number;            // Orden FIFO para desempate
 }
 
+// Candidato a entrar a la cola RR
 interface ReadyCandidate {
   id: string;
   readyTime: number;
   resetRemaining?: number;
-  /** Monotonic order (fresh arrival order or I/O entry order) for FIFO tie-break. */
   order: number;
 }
 
-/**
- * Multilevel Queue Scheduling (Silberschatz model): processes are split into
- * two independently-scheduled queues — one following non-preemptive SJF's
- * rules, the other Round Robin's rules — which compete for the CPU under a
- * FIXED PRIORITY policy. Whichever queue has fixed priority always wins the
- * CPU when it has a ready process; the other queue only runs when the
- * priority queue has no ready candidate (empty, or its next process is
- * mid-I/O). Both queues reuse the exact per-process phase/I/O state
- * machines of `sjf.ts`/`roundRobin.ts`, but the master loop below dispatches
- * only ONE unit of work at a time from whichever queue is currently active,
- * then re-evaluates — so preemption between queues only ever happens at
- * dispatch boundaries, never mid-slice.
- */
+// Motor principal MLQ
 export function runMLQ(
   processes: ProcessInput[],
   quantum: number,
@@ -57,14 +50,13 @@ export function runMLQ(
 
   if (processes.length === 0) {
     return {
-      timeline: [],
-      processResults: [],
-      averageWaitingTime: 0,
-      averageTurnaroundTime: 0,
+      timeline: [], processResults: [],
+      averageWaitingTime: 0, averageTurnaroundTime: 0,
       ioTimeline: [],
     };
   }
 
+  // Separa procesos en dos colas según su asignación (default SJF)
   const sjfProcesses = processes.filter(p => (p.queue ?? 'SJF') === 'SJF');
   const rrProcesses = processes.filter(p => (p.queue ?? 'SJF') === 'RR');
 
@@ -73,37 +65,25 @@ export function runMLQ(
   const firstStart = new Map<string, number>();
   const finishTime = new Map<string, number>();
 
-  // ===================================================================
-  // SJF-queue state (mirrors sjf.ts's inner loop body exactly)
-  // ===================================================================
+  // ──────────── ESTADO DE LA COLA SJF ────────────
   const sjfN = sjfProcesses.length;
   const sjfOps = sjfProcesses.map(normalizeIoOperations);
   const sjfStates: SjfProcState[] = sjfProcesses.map(p => ({
-    opIndex: 0,
-    cpuConsumed: 0,
-    stage: 'running',
-    nextReadyTime: p.arrivalTime,
+    opIndex: 0, cpuConsumed: 0, stage: 'running', nextReadyTime: p.arrivalTime,
   }));
   let sjfCompletedCount = 0;
 
   const sjfDurationOf = (i: number): number => {
-    const st = sjfStates[i];
-    const ops = sjfOps[i];
-    return st.opIndex < ops.length
-      ? ops[st.opIndex].after - st.cpuConsumed
-      : sjfProcesses[i].burstTime - st.cpuConsumed;
+    const st = sjfStates[i], ops = sjfOps[i];
+    return st.opIndex < ops.length ? ops[st.opIndex].after - st.cpuConsumed : sjfProcesses[i].burstTime - st.cpuConsumed;
   };
-  const sjfRemainingWorkOf = (i: number): number => {
-    const st = sjfStates[i];
-    return sjfProcesses[i].burstTime - st.cpuConsumed;
-  };
+  const sjfRemainingWorkOf = (i: number): number => sjfProcesses[i].burstTime - sjfStates[i].cpuConsumed;
   const sjfReadyTimeOf = (i: number): number => sjfStates[i].nextReadyTime;
 
   function sjfReadyCandidates(currentTime: number): number[] {
     const ready: number[] = [];
     for (let i = 0; i < sjfN; i++) {
-      const st = sjfStates[i];
-      if (st.stage === 'running' && st.nextReadyTime <= currentTime) ready.push(i);
+      if (sjfStates[i].stage === 'running' && sjfStates[i].nextReadyTime <= currentTime) ready.push(i);
     }
     return ready;
   }
@@ -113,62 +93,43 @@ export function runMLQ(
     for (let k = 1; k < ready.length; k++) {
       const idx = ready[k];
       const durCmp = sjfRemainingWorkOf(idx) - sjfRemainingWorkOf(sel);
-      if (durCmp < 0) {
-        sel = idx;
-      } else if (durCmp === 0) {
+      if (durCmp < 0) sel = idx;
+      else if (durCmp === 0) {
         const readyCmp = sjfReadyTimeOf(idx) - sjfReadyTimeOf(sel);
-        if (readyCmp < 0) {
-          sel = idx;
-        } else if (readyCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) {
-          sel = idx;
-        }
+        if (readyCmp < 0) sel = idx;
+        else if (readyCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) sel = idx;
       }
     }
     return sel;
   }
 
-  /** Runs the selected SJF-queue candidate's current phase to completion, pushes its slice/io, and returns the new currentTime. */
+  // Despacha un proceso de la cola SJF hasta completar su fase actual
   function dispatchSjfOnce(currentTime: number): number {
     const ready = sjfReadyCandidates(currentTime);
     const sel = selectShortestSjf(ready);
-    const p = sjfProcesses[sel];
-    const st = sjfStates[sel];
-    const ops = sjfOps[sel];
+    const p = sjfProcesses[sel], st = sjfStates[sel], ops = sjfOps[sel];
     const dur = sjfDurationOf(sel);
-    const startTime = currentTime;
-    const end = startTime + dur;
+    const startTime = currentTime, end = startTime + dur;
 
     timeline.push({ processId: p.id, start: startTime, end });
     if (!firstStart.has(p.id)) firstStart.set(p.id, startTime);
-
     st.cpuConsumed += dur;
 
     if (st.opIndex < ops.length) {
       const op = ops[st.opIndex];
-      const ioStart = end;
       const ioEnd = end + op.duration;
-      ioTimeline.push({ processId: p.id, start: ioStart, end: ioEnd });
+      ioTimeline.push({ processId: p.id, start: end, end: ioEnd });
       st.opIndex += 1;
-
       if (st.cpuConsumed === p.burstTime) {
-        st.stage = 'done';
-        finishTime.set(p.id, ioEnd);
-        sjfCompletedCount++;
-      } else {
-        st.nextReadyTime = ioEnd;
-      }
+        st.stage = 'done'; finishTime.set(p.id, ioEnd); sjfCompletedCount++;
+      } else st.nextReadyTime = ioEnd;
     } else {
-      st.stage = 'done';
-      finishTime.set(p.id, end);
-      sjfCompletedCount++;
+      st.stage = 'done'; finishTime.set(p.id, end); sjfCompletedCount++;
     }
-
     return end;
   }
 
-  // ===================================================================
-  // RR-queue state (mirrors roundRobin.ts's inner loop body exactly)
-  // ===================================================================
+  // ──────────── ESTADO DE LA COLA RR ────────────
   const rrSorted = [...rrProcesses]
     .map(p => ({ id: p.id, arrivalTime: p.arrivalTime, burstTime: p.burstTime }))
     .sort((a, b) => a.arrivalTime - b.arrivalTime);
@@ -178,16 +139,10 @@ export function runMLQ(
   const rrOps = new Map(rrProcesses.map(p => [p.id, normalizeIoOperations(p)]));
   const rrOpIndex = new Map<string, number>();
   const rrCpuConsumed = new Map<string, number>();
-  for (const p of rrProcesses) {
-    rrOpIndex.set(p.id, 0);
-    rrCpuConsumed.set(p.id, 0);
-  }
+  for (const p of rrProcesses) { rrOpIndex.set(p.id, 0); rrCpuConsumed.set(p.id, 0); }
 
   function rrCurrentPhaseDuration(pid: string): number {
-    const p = rrProcessMap.get(pid)!;
-    const ops = rrOps.get(pid)!;
-    const idx = rrOpIndex.get(pid)!;
-    const consumed = rrCpuConsumed.get(pid)!;
+    const p = rrProcessMap.get(pid)!, ops = rrOps.get(pid)!, idx = rrOpIndex.get(pid)!, consumed = rrCpuConsumed.get(pid)!;
     return idx < ops.length ? ops[idx].after - consumed : p.burstTime - consumed;
   }
 
@@ -197,112 +152,69 @@ export function runMLQ(
   const rrPendingIo: PendingIo[] = [];
   const rrCompleted = new Set<string>();
   let rrCompletedCount = 0;
-  let nextOrder = 0; // monotonic counter for FIFO tie-breaking (fresh arrivals + I/O entry)
+  let nextOrder = 0;
 
-  /** Merges due fresh arrivals and I/O-returns into the RR fifo by (readyTime, order) —
-   *  FIFO tie-break so the process that entered I/O earlier returns earlier. */
+  // Recolecta llegadas y retornos de E/S en la cola RR
   function rrEnqueueReady(now: number): void {
     const candidates: ReadyCandidate[] = [];
-
     while (rrNextArrivalIdx < rrSorted.length && rrSorted[rrNextArrivalIdx].arrivalTime <= now) {
       const arr = rrSorted[rrNextArrivalIdx];
-      if (!rrCompleted.has(arr.id)) {
-        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, order: nextOrder++ });
-      }
+      if (!rrCompleted.has(arr.id)) candidates.push({ id: arr.id, readyTime: arr.arrivalTime, order: nextOrder++ });
       rrNextArrivalIdx++;
     }
-
     const stillPending: PendingIo[] = [];
     for (const io of rrPendingIo) {
       if (io.readyAt <= now) {
-        if (io.nextRemaining > 0) {
-          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, order: io.order });
-        } else {
-          rrCompleted.add(io.processId);
-          finishTime.set(io.processId, io.readyAt);
-          rrCompletedCount++;
-        }
-      } else {
-        stillPending.push(io);
-      }
+        if (io.nextRemaining > 0) candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, order: io.order });
+        else { rrCompleted.add(io.processId); finishTime.set(io.processId, io.readyAt); rrCompletedCount++; }
+      } else stillPending.push(io);
     }
-    rrPendingIo.length = 0;
-    rrPendingIo.push(...stillPending);
-
+    rrPendingIo.length = 0; rrPendingIo.push(...stillPending);
     candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.order - b.order));
-
     for (const c of candidates) {
-      if (c.resetRemaining !== undefined) {
-        rrRemaining.set(c.id, c.resetRemaining);
-      }
+      if (c.resetRemaining !== undefined) rrRemaining.set(c.id, c.resetRemaining);
       rrQueue.push(c.id);
     }
   }
 
-  /** Runs the RR-queue's front process for min(remaining, quantum), pushes its slice, and returns the new currentTime. Only callable when rrQueue is non-empty. */
+  // Despacha un proceso de la cola RR por un quantum
   function dispatchRrOnce(currentTime: number): number {
     const pid = rrQueue.shift()!;
     const p = rrProcessMap.get(pid)!;
-
     if (!firstStart.has(pid)) firstStart.set(pid, currentTime);
-
-    const rem = rrRemaining.get(pid)!;
-    const runTime = Math.min(rem, quantum);
-
+    const rem = rrRemaining.get(pid)!, runTime = Math.min(rem, quantum);
     timeline.push({ processId: pid, start: currentTime, end: currentTime + runTime });
     const newTime = currentTime + runTime;
-
     rrRemaining.set(pid, rem - runTime);
     rrCpuConsumed.set(pid, rrCpuConsumed.get(pid)! + runTime);
-
-    // Silberschatz: new arrivals / I/O-returns enqueued BEFORE the preempted process
     rrEnqueueReady(newTime);
 
     if (rem - runTime <= 0) {
-      const ops = rrOps.get(pid)!;
-      const idx = rrOpIndex.get(pid)!;
-
+      const ops = rrOps.get(pid)!, idx = rrOpIndex.get(pid)!;
       if (idx < ops.length) {
-        const op = ops[idx];
-        const ioReadyAt = newTime + op.duration;
+        const op = ops[idx], ioReadyAt = newTime + op.duration;
         rrOpIndex.set(pid, idx + 1);
         ioTimeline.push({ processId: pid, start: newTime, end: ioReadyAt });
-
-        if (rrCpuConsumed.get(pid) === p.burstTime) {
+        if (rrCpuConsumed.get(pid) === p.burstTime)
           rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0, order: nextOrder++ });
-        } else {
-          const nextIdx = idx + 1;
-          const nextOp = nextIdx < ops.length ? ops[nextIdx] : undefined;
-          const nextRemaining = nextOp
-            ? nextOp.after - rrCpuConsumed.get(pid)!
-            : p.burstTime - rrCpuConsumed.get(pid)!;
-          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining, order: nextOrder++ });
+        else {
+          const nextIdx = idx + 1, nextOp = nextIdx < ops.length ? ops[nextIdx] : undefined;
+          rrPendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: nextOp ? nextOp.after - rrCpuConsumed.get(pid)! : p.burstTime - rrCpuConsumed.get(pid)!, order: nextOrder++ });
         }
-      } else {
-        rrCompleted.add(pid);
-        finishTime.set(pid, newTime);
-        rrCompletedCount++;
-      }
-    } else {
-      rrQueue.push(pid);
-    }
-
+      } else { rrCompleted.add(pid); finishTime.set(pid, newTime); rrCompletedCount++; }
+    } else rrQueue.push(pid);
     return newTime;
   }
 
-  // Seed the RR fifo with processes that arrive at t=0
-  rrEnqueueReady(0);
+  rrEnqueueReady(0); // Poblar cola RR con llegadas en t=0
 
-  // ===================================================================
-  // Master loop: dispatch ONE unit of work at a time from whichever queue
-  // is active under the fixed-priority policy, then re-evaluate.
-  // ===================================================================
+  // ──────────── BUCLE MAESTRO ────────────
+  // Despacha UNA unidad a la vez de la cola activa según la prioridad fija
   let currentTime = 0;
   const totalProcesses = processes.length;
   let completedCount = 0;
 
   while (completedCount < totalProcesses) {
-    // Pull in any due RR arrivals/io-returns into the RR fifo first.
     rrEnqueueReady(currentTime);
     completedCount = sjfCompletedCount + rrCompletedCount;
     if (completedCount >= totalProcesses) break;
@@ -310,37 +222,22 @@ export function runMLQ(
     const sjfReady = sjfReadyCandidates(currentTime).length > 0;
     const rrReady = rrQueue.length > 0;
 
+    // Política de prioridad fija: ¿qué cola ejecuta?
     const activeQueue: 'SJF' | 'RR' | null =
       priorityQueue === 'SJF'
-        ? sjfReady
-          ? 'SJF'
-          : rrReady
-            ? 'RR'
-            : null
-        : rrReady
-          ? 'RR'
-          : sjfReady
-            ? 'SJF'
-            : null;
+        ? sjfReady ? 'SJF' : rrReady ? 'RR' : null
+        : rrReady ? 'RR' : sjfReady ? 'SJF' : null;
 
     if (activeQueue === null) {
-      // Nobody ready anywhere — jump the clock to the earliest next event
-      // across BOTH queues: next SJF-queue arrival/io-return, next RR-queue
-      // arrival/io-return.
+      // Nadie listo → salta al próximo evento (llegada o fin de E/S) en ambas colas
       let nextTime = Infinity;
       for (let i = 0; i < sjfN; i++) {
         const st = sjfStates[i];
-        if (st.stage === 'running' && st.nextReadyTime < nextTime) {
-          nextTime = st.nextReadyTime;
-        }
+        if (st.stage === 'running' && st.nextReadyTime < nextTime) nextTime = st.nextReadyTime;
       }
-      if (rrNextArrivalIdx < rrSorted.length) {
-        nextTime = Math.min(nextTime, rrSorted[rrNextArrivalIdx].arrivalTime);
-      }
-      for (const io of rrPendingIo) {
-        nextTime = Math.min(nextTime, io.readyAt);
-      }
-      if (nextTime === Infinity) break; // safety net — should not happen
+      if (rrNextArrivalIdx < rrSorted.length) nextTime = Math.min(nextTime, rrSorted[rrNextArrivalIdx].arrivalTime);
+      for (const io of rrPendingIo) nextTime = Math.min(nextTime, io.readyAt);
+      if (nextTime === Infinity) break;
       currentTime = nextTime;
       continue;
     }
@@ -349,33 +246,21 @@ export function runMLQ(
     completedCount = sjfCompletedCount + rrCompletedCount;
   }
 
-  // ===================================================================
-  // Build processResults for ALL processes, preserving ORIGINAL input order
-  // ===================================================================
+  // Construye resultados preservando el orden original de entrada
   const processResults: ProcessResult[] = [];
   for (const p of processes) {
-    const startTime = firstStart.get(p.id)!;
-    const finish = finishTime.get(p.id)!;
+    const startTime = firstStart.get(p.id)!, finish = finishTime.get(p.id)!;
     const turnaroundTime = finish - p.arrivalTime;
     const sumIo = normalizeIoOperations(p).reduce((s, op) => s + op.duration, 0);
     const waitingTime = turnaroundTime - p.burstTime - sumIo;
-
-    processResults.push({
-      processId: p.id,
-      arrivalTime: p.arrivalTime,
-      startTime,
-      finishTime: finish,
-      waitingTime,
-      turnaroundTime,
-    });
+    processResults.push({ processId: p.id, arrivalTime: p.arrivalTime, startTime, finishTime: finish, waitingTime, turnaroundTime });
   }
 
   const sumWaiting = processResults.reduce((s, r) => s + r.waitingTime, 0);
   const sumTurnaround = processResults.reduce((s, r) => s + r.turnaroundTime, 0);
 
   return {
-    timeline,
-    processResults,
+    timeline, processResults,
     averageWaitingTime: sumWaiting / totalProcesses,
     averageTurnaroundTime: sumTurnaround / totalProcesses,
     ioTimeline,

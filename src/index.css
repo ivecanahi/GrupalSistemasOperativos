@@ -1,4 +1,12 @@
+/* ============================================================
+ * ESTILOS GLOBALES — Variables CSS y base tipográfica
+ * ============================================================
+ * Define la paleta de colores (accent, series, danger),
+ * tipografía y layout raíz del simulador.
+ */
+
 :root {
+  /* Paleta base */
   --text: #6b6375;
   --text-h: #08060d;
   --bg: #fff;
@@ -7,13 +15,13 @@
   --accent: #db2777;
   --accent-bg: rgba(219, 39, 119, 0.1);
   --accent-border: rgba(219, 39, 119, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --shadow: rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
+  /* Colores de peligro/error */
   --danger: #b3261e;
   --danger-bg: rgba(179, 38, 30, 0.08);
 
+  /* Fondos y tarjetas */
   --page-bg: #f8fafc;
   --card-bg: #ffffff;
   --card-border: #e2e8f0;
@@ -21,15 +29,17 @@
   --text-muted: #64748b;
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 
-  --accent-sjf: #a855f7;
+  /* Colores acento para cada sección */
+  --accent-sjf: #a855f7;     /* SJF — púrpura */
   --accent-sjf-bg: #f3e8ff;
-  --accent-rr: #3b82f6;
+  --accent-rr: #3b82f6;      /* Round Robin — azul */
   --accent-rr-bg: #dbeafe;
-  --accent-io: #10b981;
+  --accent-io: #10b981;      /* E/S — verde */
   --accent-io-bg: #d1fae5;
-  --accent-cpu: #f97316;
+  --accent-cpu: #f97316;     /* CPU — naranja */
   --accent-cpu-bg: #ffedd5;
 
+  /* 8 colores de la paleta para distinguir procesos en gráficos */
   --series-1: #e87ba4;
   --series-2: #008300;
   --series-3: #4a3aa7;
@@ -39,10 +49,12 @@
   --series-7: #1baf7a;
   --series-8: #eda100;
 
+  /* Fuentes */
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
+  /* Configuración tipográfica global */
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
   color-scheme: light;
@@ -53,11 +65,10 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  @media (max-width: 1024px) { font-size: 16px; }
 }
 
+/* Contenedor raíz — centrado, ancho máximo 1126px */
 #root {
   width: 1126px;
   max-width: 100%;
@@ -70,51 +81,30 @@
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-}
+body { margin: 0; }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
+/* Tipografía de encabezados */
+h1, h2 { font-family: var(--heading); font-weight: 500; color: var(--text-h); }
 
 h1 {
-  font-size: 56px;
-  line-height: 1.2;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+  font-size: 56px; line-height: 1.2; letter-spacing: -1.68px; margin: 32px 0;
+  @media (max-width: 1024px) { font-size: 36px; margin: 20px 0; }
 }
 
-code,
-.counter {
+h2 {
+  font-size: 24px; line-height: 118%; letter-spacing: -0.24px; margin: 0 0 8px;
+  @media (max-width: 1024px) { font-size: 20px; }
+}
+
+p { margin: 0; }
+
+/* Estilo para código y contadores */
+code, .counter {
   font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+  display: inline-flex; border-radius: 4px; color: var(--text-h);
 }
 
 code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  font-size: 15px; line-height: 135%;
+  padding: 4px 8px; background: var(--code-bg);
 }

@@ -1,43 +1,32 @@
+// ============================================================
+// ALGORITMO ROUND ROBIN — Quantum fijo
+// ============================================================
+// Round Robin: reparte la CPU en turnos de duración fija (quantum).
+// Si un proceso no termina en su quantum, vuelve al final de la
+// cola de listos. Sigue la convención Silberschatz: las nuevas
+// llegadas se encolan ANTES que el proceso desalojado.
+// Soporta múltiples operaciones de E/S por proceso.
+
 import type { ProcessInput, SchedulingResult, ExecutionSlice, ProcessResult, QueueSlice } from '../types/scheduling';
 import { normalizeIoOperations } from './ioOperations';
 
+// Proceso que está realizando E/S: se guarda cuándo vuelve y cuánto le falta
 interface PendingIo {
   processId: string;
-  readyAt: number;
-  /** Remaining time to run in the NEXT phase once (re-)enqueued; 0 means the process is done once this I/O completes (no further CPU phase). */
-  nextRemaining: number;
-  /** Monotonic order at which this process entered I/O; used for FIFO tie-break on equal readyAt. */
-  order: number;
+  readyAt: number;          // Cuándo termina la E/S
+  nextRemaining: number;    // Cuánto CPU le queda para su siguiente fase
+  order: number;            // Orden de entrada a E/S (para desempate FIFO)
 }
 
+// Candidato a entrar a la cola de listos (nueva llegada o vuelta de E/S)
 interface ReadyCandidate {
   id: string;
   readyTime: number;
-  /** Remaining time to run in the NEXT phase once (re-)enqueued, or undefined for fresh arrivals (uses existing `remaining`). */
-  resetRemaining?: number;
-  /** Monotonic order at which this process became a candidate (fresh arrival order or I/O entry order). */
-  order: number;
+  resetRemaining?: number;  // Si viene de E/S, actualiza su remaining
+  order: number;            // Orden FIFO para desempate
 }
 
-/**
- * Round Robin scheduling with a runtime-configured quantum, extended with
- * optional multi-op I/O interruption (any number of I/O operations per
- * process, including zero or one — which degrades exactly to legacy
- * behavior).
- *
- * For processes without I/O, behavior is identical to plain RR: FIFO
- * circular ready queue, preemption/requeue on quantum expiry, idle gaps
- * jump the clock to the next arrival, and simultaneous arrival-vs-requeue
- * ties resolve with new arrivals enqueued before the preempted process
- * (Silberschatz convention).
- *
- * For a process with one or more I/O operations (see `normalizeIoOperations`),
- * once its current CPU phase is exhausted it leaves the ready queue
- * entirely and enters I/O; the CPU is released so other ready processes
- * can run. Once I/O completes, the process becomes ready again (merged
- * with fresh arrivals by `readyTime` ascending, then `id` ascending) to
- * run its next CPU phase.
- */
+// Motor principal Round Robin
 export function runRoundRobin(
   processes: ProcessInput[],
   quantum: number,
@@ -48,33 +37,33 @@ export function runRoundRobin(
 
   if (processes.length === 0) {
     return {
-      timeline: [],
-      processResults: [],
-      averageWaitingTime: 0,
-      averageTurnaroundTime: 0,
+      timeline: [], processResults: [],
+      averageWaitingTime: 0, averageTurnaroundTime: 0,
       ioTimeline: [],
     };
   }
 
-  // Sort by arrivalTime so we can process arrivals sequentially in one pass
+  // Ordena procesos por arrivalTime para procesar llegadas secuencialmente
   const sorted = [...processes]
     .map(p => ({ id: p.id, arrivalTime: p.arrivalTime, burstTime: p.burstTime }))
     .sort((a, b) => a.arrivalTime - b.arrivalTime);
 
   let nextArrivalIdx = 0;
 
-  // FIFO ready queue (circular, by process id)
-  const queue: string[] = [];
+  const queue: string[] = []; // Cola FIFO de listos
 
+  // Mapas de estado para acceso rápido por ID
   const processMap = new Map(processes.map(p => [p.id, p]));
   const ops = new Map(processes.map(p => [p.id, normalizeIoOperations(p)]));
-  const opIndex = new Map<string, number>();
-  const cpuConsumed = new Map<string, number>();
+  const opIndex = new Map<string, number>();   // En qué operación E/S va cada proceso
+  const cpuConsumed = new Map<string, number>(); // Cuánto CPU ha consumido
+
   for (const p of processes) {
     opIndex.set(p.id, 0);
     cpuConsumed.set(p.id, 0);
   }
 
+  // Calcula la duración de la fase actual del proceso (hasta próximo E/S o burst completo)
   function currentPhaseDuration(pid: string): number {
     const p = processMap.get(pid)!;
     const processOps = ops.get(pid)!;
@@ -83,15 +72,14 @@ export function runRoundRobin(
     return idx < processOps.length ? processOps[idx].after - consumed : p.burstTime - consumed;
   }
 
-  // Per-process state: remaining time in the CURRENT phase
+  // Tiempo restante en la fase actual de cada proceso
   const remaining = new Map<string, number>();
   for (const p of processes) remaining.set(p.id, currentPhaseDuration(p.id));
 
-  const pendingIo: PendingIo[] = [];
+  const pendingIo: PendingIo[] = [];      // Procesos haciendo E/S
+  let nextOrder = 0;                       // Contador para orden FIFO
 
-  let nextOrder = 0; // monotonic counter for FIFO tie-breaking (fresh arrivals + I/O entry)
-
-  const completed = new Set<string>();
+  const completed = new Set<string>();      // Procesos completados
   const firstStart = new Map<string, number>();
   const finishTime = new Map<string, number>();
   const timeline: ExecutionSlice[] = [];
@@ -99,16 +87,12 @@ export function runRoundRobin(
 
   let currentTime = 0;
 
-  /**
-   * Collects fresh arrivals and I/O-returns that are ready at `currentTime`,
-   * merge-sorts them by (readyTime asc, id asc), and pushes them onto the
-   * queue in that order. Processes whose I/O return has `nextRemaining===0`
-   * (no further CPU phase remains) complete here directly instead of being
-   * enqueued.
-   */
+  // Función clave: recolecta llegadas y vueltas de E/S en el tiempo actual
+  // Las ordena por (readyTime, order) y las pone en la cola FIFO
   function enqueueReady(now: number): void {
     const candidates: ReadyCandidate[] = [];
 
+    // Nuevas llegadas cuyo arrivalTime ya pasó
     while (nextArrivalIdx < sorted.length && sorted[nextArrivalIdx].arrivalTime <= now) {
       const arr = sorted[nextArrivalIdx];
       if (!completed.has(arr.id)) {
@@ -117,11 +101,15 @@ export function runRoundRobin(
       nextArrivalIdx++;
     }
 
+    // Procesos que vuelven de E/S
     const stillPending: PendingIo[] = [];
     for (const io of pendingIo) {
       if (io.readyAt <= now) {
         if (io.nextRemaining > 0) {
-          candidates.push({ id: io.processId, readyTime: io.readyAt, resetRemaining: io.nextRemaining, order: io.order });
+          candidates.push({
+            id: io.processId, readyTime: io.readyAt,
+            resetRemaining: io.nextRemaining, order: io.order,
+          });
         } else {
           completed.add(io.processId);
           finishTime.set(io.processId, io.readyAt);
@@ -133,6 +121,7 @@ export function runRoundRobin(
     pendingIo.length = 0;
     pendingIo.push(...stillPending);
 
+    // Ordena: primero por readyTime, luego por orden de llegada FIFO
     candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.order - b.order));
 
     for (const c of candidates) {
@@ -143,11 +132,12 @@ export function runRoundRobin(
     }
   }
 
-  // Seed the queue with processes that arrive at t=0
+  // Poblar cola inicial con procesos que llegan en t=0
   enqueueReady(currentTime);
 
+  // Bucle principal
   while (completed.size < processes.length) {
-    // ---- Idle gap: nothing ready, jump to next arrival or next I/O return ----
+    // Salto temporal (idle) si la cola está vacía
     if (queue.length === 0) {
       let nextTime = Infinity;
       if (nextArrivalIdx < sorted.length) {
@@ -156,49 +146,47 @@ export function runRoundRobin(
       for (const io of pendingIo) {
         nextTime = Math.min(nextTime, io.readyAt);
       }
-      if (nextTime === Infinity) break; // safety
+      if (nextTime === Infinity) break;
       currentTime = nextTime;
       enqueueReady(currentTime);
       continue;
     }
 
-    // ---- Dispatch next ready process ----
+    // Despacha el siguiente proceso de la cola FIFO
     const pid = queue.shift()!;
     const p = processMap.get(pid)!;
 
-    if (!firstStart.has(pid)) {
-      firstStart.set(pid, currentTime);
-    }
+    if (!firstStart.has(pid)) firstStart.set(pid, currentTime);
 
     const rem = remaining.get(pid)!;
-    const runTime = Math.min(rem, quantum);
+    const runTime = Math.min(rem, quantum); // Ejecuta min(lo que queda, quantum)
 
-    timeline.push({
-      processId: pid,
-      start: currentTime,
-      end: currentTime + runTime,
-    });
+    timeline.push({ processId: pid, start: currentTime, end: currentTime + runTime });
     currentTime += runTime;
 
     remaining.set(pid, rem - runTime);
     cpuConsumed.set(pid, cpuConsumed.get(pid)! + runTime);
 
-    // Silberschatz: new arrivals / I/O-returns enqueued BEFORE the preempted process
+    // Convención Silberschatz: nuevas llegadas se encolan ANTES del proceso desalojado
     enqueueReady(currentTime);
 
     if (rem - runTime <= 0) {
+      // Terminó su fase actual
       const processOps = ops.get(pid)!;
       const idx = opIndex.get(pid)!;
 
       if (idx < processOps.length) {
+        // Hace E/S
         const op = processOps[idx];
         const ioReadyAt = currentTime + op.duration;
         opIndex.set(pid, idx + 1);
         ioTimeline.push({ processId: pid, start: currentTime, end: ioReadyAt });
 
         if (cpuConsumed.get(pid) === p.burstTime) {
+          // Ya consumió todo su burst → termina cuando vuelva de E/S
           pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining: 0, order: nextOrder++ });
         } else {
+          // Le queda más CPU después de la E/S
           const nextIdx = idx + 1;
           const nextOp = nextIdx < processOps.length ? processOps[nextIdx] : undefined;
           const nextRemaining = nextOp
@@ -206,19 +194,17 @@ export function runRoundRobin(
             : p.burstTime - cpuConsumed.get(pid)!;
           pendingIo.push({ processId: pid, readyAt: ioReadyAt, nextRemaining, order: nextOrder++ });
         }
-        // Not enqueued now, and not completed now — even if nextRemaining
-        // === 0, completion happens later inside enqueueReady when
-        // ioReadyAt is reached.
       } else {
         completed.add(pid);
         finishTime.set(pid, currentTime);
       }
     } else {
+      // No terminó su quantum → vuelve al final de la cola
       queue.push(pid);
     }
   }
 
-  // ---- Build results preserving input order ----
+  // Construye resultados preservando el orden original de entrada
   const processResults: ProcessResult[] = [];
   for (const p of processes) {
     const start = firstStart.get(p.id)!;
@@ -228,12 +214,9 @@ export function runRoundRobin(
     const waiting = turnaround - p.burstTime - sumIo;
 
     processResults.push({
-      processId: p.id,
-      arrivalTime: p.arrivalTime,
-      startTime: start,
-      finishTime: finish,
-      waitingTime: waiting,
-      turnaroundTime: turnaround,
+      processId: p.id, arrivalTime: p.arrivalTime,
+      startTime: start, finishTime: finish,
+      waitingTime: waiting, turnaroundTime: turnaround,
     });
   }
 
@@ -241,8 +224,7 @@ export function runRoundRobin(
   const sumTurnaround = processResults.reduce((s, r) => s + r.turnaroundTime, 0);
 
   return {
-    timeline,
-    processResults,
+    timeline, processResults,
     averageWaitingTime: sumWaiting / processes.length,
     averageTurnaroundTime: sumTurnaround / processes.length,
     ioTimeline,

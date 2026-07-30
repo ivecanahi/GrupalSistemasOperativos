@@ -1,34 +1,32 @@
+// ============================================================
+// CONSTRUCTOR DE LÍNEAS DE TIEMPO DE COLAS
+// ============================================================
+// A partir de la línea de tiempo de CPU y de E/S generadas por
+// el motor, deriva las tres colas visuales:
+// - cpu: copia de la línea de CPU
+// - io: copia de la línea de E/S
+// - ready: intervalos donde cada proceso esperó en la cola de listos
+
 import type { ProcessInput, ExecutionSlice, QueueSlice, QueueTimelines } from '../types/scheduling';
 
-/**
- * Derive the CPU / ready / I/O queue timelines from the engine's own
- * `cpuTimeline` and `ioTimeline`.
- *
- * - `cpu`: the CPU timeline slices, copied as QueueSlice.
- * - `io`: the engine's ioTimeline, copied as-is (already correct).
- * - `ready`: for each process, the gaps between its arrival/previous own
- *   CPU slice end and the start of its next own CPU slice (time spent
- *   waiting for the CPU). When a gap's start coincides with the start of
- *   one of the process's own io intervals (I/O always begins exactly when
- *   the preceding CPU phase ends), the visible ready portion of that gap
- *   is only the remainder after the io interval ends.
- */
 export function buildQueueTimelines(
   processes: ProcessInput[],
   cpuTimeline: ExecutionSlice[],
   ioTimeline: QueueSlice[],
 ): QueueTimelines {
+  // Cola de CPU: copia directa
   const cpu: QueueSlice[] = cpuTimeline.map(s => ({
-    processId: s.processId,
-    start: s.start,
-    end: s.end,
+    processId: s.processId, start: s.start, end: s.end,
   }));
 
+  // Cola de E/S: copia directa
   const io: QueueSlice[] = ioTimeline.map(s => ({ ...s }));
 
-  // Map process id -> arrivalTime for quick lookup
+  // Mapa para búsqueda rápida de arrivalTime por ID
   const arrivalMap = new Map(processes.map(p => [p.id, p.arrivalTime]));
 
+  // Cola de listos: para cada proceso, calcula los gaps entre
+  // su llegada/fin de CPU anterior y el inicio de su siguiente slice de CPU
   const ready: QueueSlice[] = [];
   for (const p of processes) {
     const ownSlices = cpuTimeline
@@ -36,10 +34,11 @@ export function buildQueueTimelines(
       .sort((a, b) => a.start - b.start);
 
     const ownIo = io.filter(s => s.processId === p.id);
-
     let cursor = p.arrivalTime;
+
     for (const slice of ownSlices) {
       if (slice.start >= cursor) {
+        // Si en cursor comienza una E/S, la parte visible de espera empieza donde termina la E/S
         const ioAtCursor = ownIo.find(s => s.start === cursor);
         if (ioAtCursor) {
           if (ioAtCursor.end <= slice.start) {
@@ -53,7 +52,7 @@ export function buildQueueTimelines(
     }
   }
 
-  // Sort: fresh arrivals (start === arrivalTime) first, then I/O returns (start > arrivalTime)
+  // Ordena: llegadas frescas (start === arrivalTime) primero, luego retornos de E/S
   ready.sort((a, b) => {
     const aArrival = arrivalMap.get(a.processId) ?? 0;
     const bArrival = arrivalMap.get(b.processId) ?? 0;

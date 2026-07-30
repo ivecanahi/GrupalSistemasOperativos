@@ -1,3 +1,10 @@
+// ============================================================
+// DIAGRAMA DE GANTT POR PROCESO — Filas individuales
+// ============================================================
+// Similar al GanttChart pero organizado en filas separadas:
+// una fila por proceso, mostrando solo sus propios tramos de
+// CPU. Incluye una leyenda de colores y una regla de tiempo.
+
 import type { ExecutionSlice } from '../types/scheduling';
 
 interface PerProcessGanttProps {
@@ -8,11 +15,10 @@ interface PerProcessGanttProps {
 
 const MAX_INTEGER_TICK_SPAN = 40;
 
+// Genera marcas de tiempo para la regla
 function buildTicks(maxEnd: number): number[] {
   if (maxEnd <= 0) return [0];
-  if (maxEnd <= MAX_INTEGER_TICK_SPAN) {
-    return Array.from({ length: Math.floor(maxEnd) + 1 }, (_, i) => i);
-  }
+  if (maxEnd <= MAX_INTEGER_TICK_SPAN) return Array.from({ length: Math.floor(maxEnd) + 1 }, (_, i) => i);
   const step = Math.ceil(maxEnd / MAX_INTEGER_TICK_SPAN);
   const ticks: number[] = [];
   for (let t = 0; t <= maxEnd; t += step) ticks.push(t);
@@ -20,9 +26,10 @@ function buildTicks(maxEnd: number): number[] {
   return ticks;
 }
 
-const PX_PER_MS = 48;
+const PX_PER_MS = 48; // Píxeles por milisegundo para el ancho mínimo
 
 export function PerProcessGantt({ timeline, colorMap, hideLegend = false }: PerProcessGanttProps) {
+  // Orden de los procesos (según primera aparición en timeline)
   const processOrder: string[] = [];
   for (const s of timeline) {
     if (!processOrder.includes(s.processId)) processOrder.push(s.processId);
@@ -44,64 +51,48 @@ export function PerProcessGantt({ timeline, colorMap, hideLegend = false }: PerP
         <div className="gantt-empty">No hay procesos para mostrar</div>
       ) : (
         <>
+          {/* Leyenda de colores (ocultable) */}
           {!hideLegend && (
             <div className="per-process-gantt-legend">
-              {processOrder.map(processId => {
-                const color = colorMap.get(processId) ?? 'var(--series-1)';
-                return (
-                  <span key={processId} className="legend-entry" data-legend-entry={processId} data-color={color}>
-                    <span className="legend-swatch" style={{ background: color }} />
-                    {processId}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="per-process-gantt-body">
-            <div className="per-process-gantt-labels">
               {processOrder.map(processId => (
-                <span key={processId} className="per-process-gantt-row-label">
+                <span key={processId} className="legend-entry" data-legend-entry={processId} data-color={colorMap.get(processId) ?? 'var(--series-1)'}>
+                  <span className="legend-swatch" style={{ background: colorMap.get(processId) ?? 'var(--series-1)' }} />
                   {processId}
                 </span>
               ))}
             </div>
+          )}
+
+          <div className="per-process-gantt-body">
+            {/* Etiquetas de procesos a la izquierda */}
+            <div className="per-process-gantt-labels">
+              {processOrder.map(processId => (
+                <span key={processId} className="per-process-gantt-row-label">{processId}</span>
+              ))}
+            </div>
+            {/* Área scrolleable del diagrama */}
             <div className="per-process-gantt-scroll">
               <div className="per-process-gantt-content" style={{ minWidth: `${contentWidth}px` }}>
+                {/* Regla de tiempo superior */}
                 <div className="per-process-gantt-ruler">
                   {ticks.map(t => (
-                    <span key={t} className="queue-ruler-tick" style={{ left: `${t * scale}%` }}>
-                      {t}
-                    </span>
+                    <span key={t} className="queue-ruler-tick" style={{ left: `${t * scale}%` }}>{t}</span>
                   ))}
                 </div>
-
+                {/* Filas: una por proceso */}
                 <div className="per-process-gantt-rows">
-                  {processOrder.map(processId => {
-                    const color = colorMap.get(processId) ?? 'var(--series-1)';
-                    const ownSlices = timeline.filter(s => s.processId === processId);
-                    return (
-                      <div key={processId} className="per-process-gantt-track-row" data-row={processId}>
-                        {ownSlices.map((s, i) => {
-                          const width = (s.end - s.start) * scale;
-                          const left = s.start * scale;
-                          return (
-                            <div
-                              key={i}
-                              className="gantt-slice"
-                              data-slice
-                              data-process={processId}
-                              data-color={color}
-                              data-width={width.toFixed(4)}
-                              style={{ left: `${left}%`, width: `${width}%`, background: color }}
-                            >
-                              {s.processId}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                  {processOrder.map(processId => (
+                    <div key={processId} className="per-process-gantt-track-row" data-row={processId}>
+                      {timeline.filter(s => s.processId === processId).map((s, i) => (
+                        <div key={i} className="gantt-slice" data-slice data-process={processId}
+                          data-color={colorMap.get(processId) ?? 'var(--series-1)'}
+                          data-width={((s.end - s.start) * scale).toFixed(4)}
+                          style={{ left: `${s.start * scale}%`, width: `${(s.end - s.start) * scale}%`, background: colorMap.get(processId) ?? 'var(--series-1)' }}>
+                          {s.processId}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

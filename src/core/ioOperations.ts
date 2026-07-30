@@ -1,24 +1,21 @@
+// ============================================================
+// NORMALIZADOR DE OPERACIONES DE E/S
+// ============================================================
+// Unifica el formato legacy (ioBurstTime/ioTriggerAfter) con el
+// nuevo formato ioOperations (soporta múltiples operaciones).
+// Esto permite retrocompatibilidad con archivos Excel antiguos.
+
 import type { IoOperation, ProcessInput } from '../types/scheduling';
 
-/**
- * Normalizes a process's I/O configuration into an ordered list of
- * `IoOperation`s, regardless of whether it was expressed via the new
- * `ioOperations` field or the legacy `ioBurstTime`/`ioTriggerAfter` pair.
- *
- * - When `ioOperations` is a non-empty array, it takes precedence and is
- *   returned sorted by `after` ascending (defensive — callers may provide
- *   them out of order).
- * - Otherwise, when the legacy `ioBurstTime` is set, it is normalized into
- *   a single-element list, defaulting `after` to `burstTime` when
- *   `ioTriggerAfter` is omitted (I/O strictly after the full burst).
- * - Otherwise, an empty list (no I/O) is returned.
- */
+// Convierte la configuración de E/S de un proceso en una lista ordenada de IoOperation
 export function normalizeIoOperations(p: ProcessInput): IoOperation[] {
+  // Si usa el nuevo campo ioOperations (array), lo ordena por 'after' ascendente
   if (p.ioOperations && p.ioOperations.length > 0) {
     return [...p.ioOperations].sort((a, b) => a.after - b.after);
   }
+  // Si usa el campo legacy ioBurstTime, lo convierte a una operación única
   if (p.ioBurstTime && p.ioBurstTime > 0) {
     return [{ after: p.ioTriggerAfter ?? p.burstTime, duration: p.ioBurstTime }];
   }
-  return [];
+  return []; // Sin operaciones de E/S
 }

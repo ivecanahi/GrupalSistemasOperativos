@@ -1,26 +1,28 @@
+// ============================================================
+// REGISTRO DE EVENTOS — Lista cronológica colapsable
+// ============================================================
+// Muestra todos los eventos de la simulación (llegadas, CPU,
+// E/S, finalizaciones) en orden cronológico, en un acordeón
+// colapsable con contador de eventos.
+
 import { useState } from 'react';
 import type { ScheduleEvent } from '../lib/eventLog';
 
-interface EventLogProps {
-  events: ScheduleEvent[];
-}
+interface EventLogProps { events: ScheduleEvent[]; }
 
 export function EventLog({ events }: EventLogProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="event-log">
-      <button
-        type="button"
-        className="event-log-header"
-        onClick={() => setExpanded(v => !v)}
-        aria-expanded={expanded}
-      >
+      {/* Encabezado del acordeón: chevron + título + contador */}
+      <button type="button" className="event-log-header" onClick={() => setExpanded(v => !v)} aria-expanded={expanded}>
         <span className={expanded ? 'event-log-chevron event-log-chevron-open' : 'event-log-chevron'}>▸</span>
         <span className="event-log-title">Registro de eventos</span>
         <span className="event-log-count">{events.length}</span>
       </button>
 
+      {/* Contenido expandido: lista de eventos */}
       {expanded && (
         events.length === 0 ? (
           <p className="event-log-empty">No hay eventos</p>

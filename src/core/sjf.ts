@@ -1,24 +1,25 @@
+// ============================================================
+// ALGORITMO SJF (Shortest Job First) — No apropiativo
+// ============================================================
+// SJF no apropiativo: selecciona siempre el proceso listo con
+// la ráfaga de CPU más corta restante y lo ejecuta hasta que
+// termina o hasta que hace una E/S. Soporta múltiples
+// operaciones de E/S por proceso.
+
 import type { ProcessInput, SchedulingResult, ExecutionSlice, ProcessResult, QueueSlice } from '../types/scheduling';
 import { normalizeIoOperations } from './ioOperations';
 
+// Estado interno de cada proceso durante la simulación
 interface ProcState {
-  index: number;
-  opIndex: number;
-  cpuConsumed: number;
-  stage: 'running' | 'done';
-  /**
-   * Gate for readiness while `stage === 'running'`: `arrivalTime` before the
-   * process has ever run, or the completion time of its most recent I/O
-   * wait once it has returned from one.
-   */
-  nextReadyTime: number;
+  index: number;           // Índice en el arreglo original
+  opIndex: number;         // Índice de la operación de E/S actual
+  cpuConsumed: number;     // Cuánto CPU ha consumido hasta ahora
+  stage: 'running' | 'done'; // Estado del proceso
+  nextReadyTime: number;   // Cuándo estará listo (arrival o fin de E/S)
 }
 
-/**
- * Pick the shortest current-phase duration among ready candidates.
- * Ties broken by earliest readyTime (arrivalTime for never-yet-run
- * processes, I/O-completion time for I/O returnees), then ascending id.
- */
+// Selecciona el proceso con menor ráfaga restante entre los listos
+// Desempate: menor readyTime, luego menor id
 function selectShortest(
   ready: number[],
   processes: ProcessInput[],
@@ -43,51 +44,34 @@ function selectShortest(
   return sel;
 }
 
-/**
- * Non-preemptive Shortest Job First scheduling, with optional multi-op I/O
- * interruption (any number of I/O operations per process, including zero
- * or one — which degrades exactly to legacy behavior).
- *
- * For processes without I/O, behavior is identical to plain SJF: shortest
- * burst first among arrived, ties broken by earliest arrivalTime then
- * ascending id, idle gaps jump the clock to the next arrival.
- *
- * For a process with one or more I/O operations (see `normalizeIoOperations`),
- * its burst is split into CPU phases separated by I/O waits; the CPU is
- * released during each I/O wait so other ready processes can run. Once an
- * I/O operation completes, the process becomes ready again to run its next
- * CPU phase.
- */
+// Motor principal SJF: ejecuta la simulación completa
 export function runSJF(processes: ProcessInput[]): SchedulingResult {
   if (processes.length === 0) {
     return {
-      timeline: [],
-      processResults: [],
-      averageWaitingTime: 0,
-      averageTurnaroundTime: 0,
+      timeline: [], processResults: [],
+      averageWaitingTime: 0, averageTurnaroundTime: 0,
       ioTimeline: [],
     };
   }
 
   const n = processes.length;
-  const allOps = processes.map(normalizeIoOperations);
+  const allOps = processes.map(normalizeIoOperations); // Normaliza E/S de cada proceso
 
+  // Inicializa estados: cada proceso comienza en su arrivalTime
   const states: ProcState[] = processes.map((p, i) => ({
-    index: i,
-    opIndex: 0,
-    cpuConsumed: 0,
-    stage: 'running',
-    nextReadyTime: p.arrivalTime,
+    index: i, opIndex: 0, cpuConsumed: 0,
+    stage: 'running', nextReadyTime: p.arrivalTime,
   }));
 
   let completedCount = 0;
   let currentTime = 0;
 
-  const timeline: ExecutionSlice[] = [];
-  const ioTimeline: QueueSlice[] = [];
-  const firstStart = new Map<string, number>();
-  const finishTime = new Map<string, number>();
+  const timeline: ExecutionSlice[] = [];    // Línea de tiempo de CPU
+  const ioTimeline: QueueSlice[] = [];      // Intervalos de E/S
+  const firstStart = new Map<string, number>(); // Primera vez que cada proceso usa CPU
+  const finishTime = new Map<string, number>(); // Cuándo terminó cada proceso
 
+  // Funciones auxiliares para conocer estado de cada proceso
   const durationOf = (i: number): number => {
     const st = states[i];
     const ops = allOps[i];
@@ -95,13 +79,12 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       ? ops[st.opIndex].after - st.cpuConsumed
       : processes[i].burstTime - st.cpuConsumed;
   };
-  const remainingWorkOf = (i: number): number => {
-    const st = states[i];
-    return processes[i].burstTime - st.cpuConsumed;
-  };
+  const remainingWorkOf = (i: number): number => processes[i].burstTime - states[i].cpuConsumed;
   const readyTimeOf = (i: number): number => states[i].nextReadyTime;
 
+  // Bucle principal: mientras queden procesos por completar
   while (completedCount < n) {
+    // Recolecta procesos listos (llegaron o volvieron de E/S)
     const ready: number[] = [];
     for (let i = 0; i < n; i++) {
       const st = states[i];
@@ -110,6 +93,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       }
     }
 
+    // Si nadie está listo → salto temporal (idle) hasta el próximo evento
     if (ready.length === 0) {
       let nextTime = Infinity;
       for (let i = 0; i < n; i++) {
@@ -122,6 +106,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       continue;
     }
 
+    // Selecciona el más corto y lo ejecuta hasta completar su fase actual
     const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf);
     const p = processes[sel];
     const st = states[sel];
@@ -135,8 +120,8 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
 
     st.cpuConsumed += dur;
 
+    // Verifica si esta fase terminó por una operación de E/S
     if (st.opIndex < ops.length) {
-      // This phase ended by hitting an I/O trigger.
       const op = ops[st.opIndex];
       const ioStart = end;
       const ioEnd = end + op.duration;
@@ -144,11 +129,12 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       st.opIndex += 1;
 
       if (st.cpuConsumed === p.burstTime) {
+        // Terminó justo al completar la E/S
         st.stage = 'done';
         finishTime.set(p.id, ioEnd);
         completedCount++;
       } else {
-        st.nextReadyTime = ioEnd;
+        st.nextReadyTime = ioEnd; // Vuelve a la cola de listos después de la E/S
       }
     } else {
       st.stage = 'done';
@@ -159,6 +145,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
     currentTime = end;
   }
 
+  // Construye resultados por proceso: waiting y turnaround
   const processResults: ProcessResult[] = [];
   for (const p of processes) {
     const startTime = firstStart.get(p.id)!;
@@ -168,21 +155,18 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
     const waitingTime = turnaroundTime - p.burstTime - sumIo;
 
     processResults.push({
-      processId: p.id,
-      arrivalTime: p.arrivalTime,
-      startTime,
-      finishTime: finish,
-      waitingTime,
-      turnaroundTime,
+      processId: p.id, arrivalTime: p.arrivalTime,
+      startTime, finishTime: finish,
+      waitingTime, turnaroundTime,
     });
   }
 
+  // Promedios finales
   const sumWaiting = processResults.reduce((s, r) => s + r.waitingTime, 0);
   const sumTurnaround = processResults.reduce((s, r) => s + r.turnaroundTime, 0);
 
   return {
-    timeline,
-    processResults,
+    timeline, processResults,
     averageWaitingTime: sumWaiting / n,
     averageTurnaroundTime: sumTurnaround / n,
     ioTimeline,

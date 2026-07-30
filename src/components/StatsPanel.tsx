@@ -1,3 +1,10 @@
+// ============================================================
+// PANEL DE ESTADÍSTICAS — Resultados por proceso + resumen
+// ============================================================
+// Muestra una tabla con los resultados individuales de cada
+// proceso (llegada, inicio, fin, espera, retorno) y un resumen
+// con métricas globales: makespan, ráfaga promedio, etc.
+
 import type { Algorithm, ProcessInput, ProcessResult } from '../types/scheduling';
 
 interface StatsPanelProps {
@@ -6,32 +13,26 @@ interface StatsPanelProps {
   algorithm: Algorithm;
 }
 
+// Etiquetas descriptivas para cada algoritmo
 const ALGORITHM_LABELS: Record<Algorithm, string> = {
   SJF: 'SJF (no apropiativo)',
   RR: 'Round Robin',
   MLQ: 'Colas multinivel (SJF + RR)',
 };
 
-// Módulo 5 (métricas): tabla de entrada/salida por proceso + resumen del ejercicio.
 export function StatsPanel({ processResults, processes, algorithm }: StatsPanelProps) {
+  // Calcula métricas globales
   const burstById = new Map(processes.map(p => [p.id, p.burstTime]));
   const bursts = processResults.map(r => burstById.get(r.processId) ?? 0);
   const averageBurstTime = bursts.length > 0 ? bursts.reduce((s, b) => s + b, 0) / bursts.length : 0;
   const makespan = processResults.length > 0 ? Math.max(...processResults.map(r => r.finishTime)) : 0;
-  const algorithmLabel = ALGORITHM_LABELS[algorithm];
 
   return (
     <div className="stats-panel-wrap">
+      {/* Tabla de resultados por proceso */}
       <table className="process-table">
         <thead>
-          <tr>
-            <th>Proceso</th>
-            <th>Llegada</th>
-            <th>Entrada</th>
-            <th>Salida</th>
-            <th>Espera</th>
-            <th>Retorno</th>
-          </tr>
+          <tr><th>Proceso</th><th>Llegada</th><th>Entrada</th><th>Salida</th><th>Espera</th><th>Retorno</th></tr>
         </thead>
         <tbody>
           {processResults.map(result => (
@@ -47,11 +48,13 @@ export function StatsPanel({ processResults, processes, algorithm }: StatsPanelP
         </tbody>
       </table>
 
+      {/* Resumen textual de la simulación */}
       <p className="stats-summary">
-        Se simularon {processes.length} proceso(s) con el algoritmo {algorithmLabel}. El tiempo total de
+        Se simularon {processes.length} proceso(s) con el algoritmo {ALGORITHM_LABELS[algorithm]}. El tiempo total de
         simulación (makespan) fue de {makespan} ms, con una ráfaga de CPU promedio de {averageBurstTime} ms.
       </p>
 
+      {/* Tarjetas de métricas */}
       <div className="metric-tile-sm-grid">
         <div className="metric-tile-sm">
           <span className="metric-tile-sm-label">Número de procesos</span>

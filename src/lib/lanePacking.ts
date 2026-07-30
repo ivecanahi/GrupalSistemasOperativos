@@ -1,24 +1,29 @@
+// ============================================================
+// EMPAQUETADOR DE INTERVALOS — Algoritmo "meeting rooms"
+// ============================================================
+// Asigna cada intervalo (slice de cola) a la primera pista
+// disponible (track) cuyo intervalo anterior ya terminó.
+// Esto permite mostrar intervalos solapados en filas separadas
+// dentro del componente QueueSection.
+
 import type { QueueSlice } from '../types/scheduling';
 
 export interface PackedSlice extends QueueSlice {
-  track: number; // 0-indexed sub-row within the lane
+  track: number; // Pista 0-indexada (sub-fila) dentro del carril
 }
 
-/**
- * Greedy interval-packing ("meeting rooms") algorithm: assigns each slice to
- * the lowest-numbered track whose previously assigned slice has already
- * ended by the time this slice starts.
- */
+// Algoritmo greedy: cada slice se asigna a la pista más baja disponible
 export function packIntervals(slices: QueueSlice[]): PackedSlice[] {
   const sorted = [...slices].sort((a, b) => a.start - b.start || a.end - b.end);
 
-  const trackEnds: number[] = [];
+  const trackEnds: number[] = []; // Fin del último slice en cada pista
   const packed: PackedSlice[] = [];
 
   for (const slice of sorted) {
+    // Busca la primera pista cuyo último slice ya terminó
     let track = trackEnds.findIndex(end => end <= slice.start);
     if (track === -1) {
-      track = trackEnds.length;
+      track = trackEnds.length; // Nueva pista
       trackEnds.push(slice.end);
     } else {
       trackEnds[track] = slice.end;

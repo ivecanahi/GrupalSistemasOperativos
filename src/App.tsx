@@ -1,3 +1,12 @@
+// ============================================================
+// COMPONENTE PRINCIPAL DE LA APLICACIÓN
+// ============================================================
+// Organiza toda la interfaz del simulador:
+// 1. Selector de algoritmo (SJF, RR, MLQ) y quantum
+// 2. Carga de datos (manual o desde Excel)
+// 3. Tabla de procesos con CRUD
+// 4. Resultados: colas, Gantt, estadísticas, promedios
+
 import { useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { Algorithm, ProcessInput, QueueAssignment, SchedulingResult } from './types/scheduling';
@@ -12,29 +21,30 @@ import { readProcessesFromXlsx, writeProcessesToXlsx } from './lib/xlsxIO';
 import './App.css';
 
 function App() {
-  const [processes, setProcesses] = useState<ProcessInput[]>([]);
-  const [algorithm, setAlgorithm] = useState<Algorithm>('SJF');
-  const [quantum, setQuantum] = useState(2);
-  const [priorityQueue, setPriorityQueue] = useState<QueueAssignment>('SJF');
-  const [result, setResult] = useState<SchedulingResult | null>(null);
-  const [ranProcesses, setRanProcesses] = useState<ProcessInput[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
+  // Estado global de la aplicación
+  const [processes, setProcesses] = useState<ProcessInput[]>([]);   // Procesos en la tabla
+  const [algorithm, setAlgorithm] = useState<Algorithm>('SJF');     // Algoritmo seleccionado
+  const [quantum, setQuantum] = useState(2);                        // Quantum para RR/MLQ
+  const [priorityQueue, setPriorityQueue] = useState<QueueAssignment>('SJF'); // Cola prioritaria en MLQ
+  const [result, setResult] = useState<SchedulingResult | null>(null); // Resultados de la simulación
+  const [ranProcesses, setRanProcesses] = useState<ProcessInput[]>([]); // Snapshot de procesos al ejecutar
+  const [importError, setImportError] = useState<string | null>(null); // Error de importación
 
-  // Shared color map: built from the current table order (always available,
-  // even before running), so a process's color never changes once assigned
-  // and always matches its color in every diagram below.
+  // Mapa de colores: se construye del orden actual de la tabla
+  // Un proceso siempre mantiene el mismo color en todos los diagramas
   const colorMap = buildColorMap(processes.map(p => p.id));
 
+  // Ejecuta la simulación con la configuración actual
   function handleRun() {
     setResult(schedule(processes, { algorithm, quantum, priorityQueue }));
-    setRanProcesses(processes);
+    setRanProcesses(processes); // Guarda copia de los procesos al ejecutar
   }
 
+  // Importa procesos desde un archivo Excel
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-
     try {
       const imported = await readProcessesFromXlsx(file);
       setProcesses(imported);
@@ -44,6 +54,7 @@ function App() {
     }
   }
 
+  // Exporta procesos a Excel
   function handleExport() {
     writeProcessesToXlsx(processes, 'procesos.xlsx');
   }
@@ -52,6 +63,7 @@ function App() {
     <div id="app">
       <h1>Algoritmo: SJF no apropiativo y Round Robin fijo</h1>
 
+      {/* Tarjetas informativas de los algoritmos */}
       <div className="header-info-cards">
         <div className="info-card accent-sjf">
           <svg className="info-card-icon" aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -59,10 +71,7 @@ function App() {
           </svg>
           <div className="info-card-body">
             <h3 className="info-card-title">SJF no apropiativo</h3>
-            <p className="info-card-desc">
-              Elige siempre el proceso listo con la ráfaga de CPU más corta y lo ejecuta hasta que termina,
-              sin interrupciones.
-            </p>
+            <p className="info-card-desc">Elige siempre el proceso listo con la ráfaga de CPU más corta y lo ejecuta hasta que termina, sin interrupciones.</p>
           </div>
         </div>
         <div className="info-card accent-rr">
@@ -71,14 +80,12 @@ function App() {
           </svg>
           <div className="info-card-body">
             <h3 className="info-card-title">Round Robin (fijo)</h3>
-            <p className="info-card-desc">
-              Reparte la CPU en turnos de duración fija (quantum); si un proceso no termina su turno, vuelve al
-              final de la cola de listos.
-            </p>
+            <p className="info-card-desc">Reparte la CPU en turnos de duración fija (quantum); si un proceso no termina su turno, vuelve al final de la cola de listos.</p>
           </div>
         </div>
       </div>
 
+      {/* Barra de ejecución: selector de algoritmo, quantum y botón */}
       <section className="card-v2 run-bar">
         <label className="field">
           Algoritmo:
@@ -91,12 +98,7 @@ function App() {
         {(algorithm === 'RR' || algorithm === 'MLQ') && (
           <label className="field">
             Quantum:
-            <input
-              type="number"
-              min={1}
-              value={quantum}
-              onChange={(e) => setQuantum(Number(e.target.value))}
-            />
+            <input type="number" min={1} value={quantum} onChange={(e) => setQuantum(Number(e.target.value))} />
           </label>
         )}
         {algorithm === 'MLQ' && (
@@ -108,11 +110,10 @@ function App() {
             </select>
           </label>
         )}
-        <button type="button" className="btn btn-primary" onClick={handleRun}>
-          Ejecutar
-        </button>
+        <button type="button" className="btn btn-primary" onClick={handleRun}>Ejecutar</button>
       </section>
 
+      {/* Sección 1: Carga de datos */}
       <section>
         <h2>1. Cargar datos del ejercicio</h2>
         <div className="section1-cards">
@@ -122,9 +123,7 @@ function App() {
             </svg>
             <div className="option-card-body">
               <h3 className="option-card-title">Ingresar manualmente</h3>
-              <p className="option-card-desc">
-                Agrega procesos uno por uno indicando su tiempo de llegada, ráfaga de CPU y operaciones de E/S.
-              </p>
+              <p className="option-card-desc">Agrega procesos uno por uno indicando su tiempo de llegada, ráfaga de CPU y operaciones de E/S.</p>
               <a href="#agregar-proceso" className="btn btn-ghost">Ir al formulario ↓</a>
             </div>
           </div>
@@ -135,18 +134,13 @@ function App() {
             </svg>
             <div className="option-card-body">
               <h3 className="option-card-title">Cargar desde Excel</h3>
-              <p className="option-card-desc">
-                Importa una lista de procesos desde un archivo .xlsx con las columnas id, name, arrivalTime y
-                burstTime.
-              </p>
+              <p className="option-card-desc">Importa una lista de procesos desde un archivo .xlsx con las columnas id, name, arrivalTime y burstTime.</p>
               <div className="process-io-actions">
                 <label className="btn btn-ghost file-input-label">
                   Importar Excel
                   <input type="file" accept=".xlsx" onChange={handleImport} className="file-input-hidden" />
                 </label>
-                <button type="button" className="btn btn-ghost" onClick={handleExport}>
-                  Exportar Excel
-                </button>
+                <button type="button" className="btn btn-ghost" onClick={handleExport}>Exportar Excel</button>
               </div>
               {importError && <p role="alert" className="field-error">{importError}</p>}
             </div>
@@ -154,12 +148,15 @@ function App() {
         </div>
       </section>
 
+      {/* Sección 2: Tabla de procesos */}
       <section className="card-v2">
         <h2>2. Tabla de procesos</h2>
         <ProcessTable processes={processes} onChange={setProcesses} colorMap={colorMap} />
       </section>
 
+      {/* Secciones 3-4: Resultados (solo si ya se ejecutó) */}
       {result && (() => {
+        // Separa colas de listos por tipo (SJF y RR) para MLQ
         const queueById = new Map(ranProcesses.map(p => [p.id, p.queue ?? 'SJF']));
         const readySlices = result.queues?.ready ?? [];
         const sjfReady = readySlices.filter(s => (queueById.get(s.processId) ?? 'SJF') === 'SJF');
@@ -169,6 +166,7 @@ function App() {
 
         return (
           <>
+            {/* Sección 3: Desarrollo (colas + Gantt) */}
             <section>
               <h2>3. Desarrollo del ejercicio</h2>
               <div className="section-stack">
@@ -178,18 +176,9 @@ function App() {
                     <QueueSection title="Cola de Round Robin" slices={rrReady} colorMap={colorMap} accent="rr" />
                   </>
                 )}
-                {algorithm === 'SJF' && (
-                  <QueueSection title="Cola de listos (SJF)" slices={readySlices} colorMap={colorMap} accent="sjf" />
-                )}
-                {algorithm === 'RR' && (
-                  <QueueSection title="Cola de listos (Round Robin)" slices={rrReady} colorMap={colorMap} accent="rr" />
-                )}
-                <QueueSection
-                  title="Cola de Operaciones de entrada/salida"
-                  slices={ioSlices}
-                  colorMap={colorMap}
-                  accent="io"
-                />
+                {algorithm === 'SJF' && <QueueSection title="Cola de listos (SJF)" slices={readySlices} colorMap={colorMap} accent="sjf" />}
+                {algorithm === 'RR' && <QueueSection title="Cola de listos (Round Robin)" slices={rrReady} colorMap={colorMap} accent="rr" />}
+                <QueueSection title="Cola de Operaciones de entrada/salida" slices={ioSlices} colorMap={colorMap} accent="io" />
                 <QueueSection title="Cola de CPU" slices={cpuSlices} colorMap={colorMap} accent="cpu" />
                 <section className="card-v2">
                   <PerProcessGantt timeline={result.timeline} colorMap={colorMap} hideLegend />
@@ -197,6 +186,7 @@ function App() {
               </div>
             </section>
 
+            {/* Sección 4: Resumen + promedios */}
             <section className="card-v2">
               <h2>4. Resumen del ejercicio</h2>
               <StatsPanel processResults={result.processResults} processes={ranProcesses} algorithm={algorithm} />
