@@ -12,31 +12,53 @@ interface ProcState {
    * wait once it has returned from one.
    */
   nextReadyTime: number;
+  /**
+   * Monotonic order for FIFO tie-breaking: set at arrival for fresh processes,
+   * and updated when entering I/O so processes returning from I/O keep their
+   * entry order (first-entered-I/O returns first when readyTimes collide).
+   */
+  fifoOrder: number;
 }
 
 /**
- * Pick the shortest current-phase duration among ready candidates.
- * Ties broken by earliest readyTime (arrivalTime for never-yet-run
- * processes, I/O-completion time for I/O returnees), then ascending id.
+ * Pick the shortest remaining CPU work among ready candidates.
+ * Ties broken by earliest readyTime.
+ * If both are fresh arrivals (never run before): ascending id.
+ * If one or both are I/O returnees: FIFO order (who entered I/O earlier).
  */
 function selectShortest(
   ready: number[],
   processes: ProcessInput[],
-  durationOf: (i: number) => number,
+  remainingWorkOf: (i: number) => number,
   readyTimeOf: (i: number) => number,
+  fifoOrderOf: (i: number) => number,
+  hasRunBefore: (i: number) => boolean,
 ): number {
   let sel = ready[0];
   for (let i = 1; i < ready.length; i++) {
     const idx = ready[i];
-    const durCmp = durationOf(idx) - durationOf(sel);
+    const durCmp = remainingWorkOf(idx) - remainingWorkOf(sel);
     if (durCmp < 0) {
       sel = idx;
     } else if (durCmp === 0) {
       const readyCmp = readyTimeOf(idx) - readyTimeOf(sel);
       if (readyCmp < 0) {
         sel = idx;
-      } else if (readyCmp === 0 && processes[idx].id < processes[sel].id) {
-        sel = idx;
+      } else if (readyCmp === 0) {
+        const selFresh = !hasRunBefore(sel);
+        const idxFresh = !hasRunBefore(idx);
+        if (selFresh && idxFresh) {
+          // Both fresh: tie-break by id (spec requirement)
+          if (processes[idx].id < processes[sel].id) sel = idx;
+        } else {
+          // At least one I/O returnee: FIFO order wins
+          const fifoCmp = fifoOrderOf(idx) - fifoOrderOf(sel);
+          if (fifoCmp < 0) {
+            sel = idx;
+          } else if (fifoCmp === 0 && processes[idx].id < processes[sel].id) {
+            sel = idx;
+          }
+        }
       }
     }
   }
@@ -72,12 +94,14 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
   const n = processes.length;
   const allOps = processes.map(normalizeIoOperations);
 
+  let nextFifoOrder = 0;
   const states: ProcState[] = processes.map((p, i) => ({
     index: i,
     opIndex: 0,
     cpuConsumed: 0,
     stage: 'running',
     nextReadyTime: p.arrivalTime,
+    fifoOrder: nextFifoOrder++,
   }));
 
   let completedCount = 0;
@@ -100,6 +124,8 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
     return processes[i].burstTime - st.cpuConsumed;
   };
   const readyTimeOf = (i: number): number => states[i].nextReadyTime;
+  const fifoOrderOf = (i: number): number => states[i].fifoOrder;
+  const hasRunBefore = (i: number): boolean => states[i].cpuConsumed > 0;
 
   while (completedCount < n) {
     const ready: number[] = [];
@@ -122,7 +148,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
       continue;
     }
 
-    const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf);
+    const sel = selectShortest(ready, processes, remainingWorkOf, readyTimeOf, fifoOrderOf, hasRunBefore);
     const p = processes[sel];
     const st = states[sel];
     const ops = allOps[sel];
@@ -149,6 +175,7 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
         completedCount++;
       } else {
         st.nextReadyTime = ioEnd;
+        st.fifoOrder = nextFifoOrder++; // record I/O entry order for FIFO tie-break on return
       }
     } else {
       st.stage = 'done';
