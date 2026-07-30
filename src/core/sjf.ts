@@ -20,62 +20,84 @@ interface ProcState {
   cpuConsumed: number;
   stage: 'running' | 'done';
   /**
-   * Gate for readiness while `stage === 'running'`: `arrivalTime` before the
-   * process has ever run, or the completion time of its most recent I/O
-   * wait once it has returned from one.
-   */
+  * Controla cuándo el proceso está "listo" (ready) mientras stage === 'running':
+  * - Si el proceso nunca ha corrido → es su arrivalTime (cuándo llegó al sistema)
+  * - Si el proceso ya regresó de una espera de I/O → es el momento en que
+   *   terminó esa espera de I/O (o sea, cuándo volvió a estar disponible)
+  */
   nextReadyTime: number;
+  
   /**
-   * Monotonic order for FIFO tie-breaking: set at arrival for fresh processes,
-   * and updated when entering I/O so processes returning from I/O keep their
-   * entry order (first-entered-I/O returns first when readyTimes collide).
-   */
+ * Un número que crece siempre hacia arriba (monotónico), usado para desempatar
+ * en orden FIFO (el que llegó primero, se atiende primero):
+ * - Para procesos nuevos: se asigna cuando el proceso llega (arrival)
+ * - Cuando el proceso entra a I/O: se actualiza, para que al volver de I/O
+ *   mantenga su lugar en la fila según CUÁNDO entró a I/O
+ *  (así, si dos procesos "empatan" en nextReadyTime, gana el que entró
+ *  primero a la cola de I/O, no el que salió primero)
+ */
   fifoOrder: number;
 }
 
 /**
- * Pick the shortest remaining CPU work among ready candidates.
- * Ties broken by earliest readyTime.
- * If both are fresh arrivals (never run before): ascending id.
- * If one or both are I/O returnees: FIFO order (who entered I/O earlier).
+ * Selecciona el trabajo de CPU restante más corto entre los candidatos listos (ready).
+ * Empates se resuelven por el readyTime más temprano.
+ * Si ambos son llegadas nuevas (nunca han corrido antes): por id ascendente.
+ * Si uno o ambos regresan de I/O: orden FIFO (quién entró primero a I/O).
  */
 function selectShortest(
-  ready: number[],
-  processes: ProcessInput[],
-  remainingWorkOf: (i: number) => number,
-  readyTimeOf: (i: number) => number,
-  fifoOrderOf: (i: number) => number,
-  hasRunBefore: (i: number) => boolean,
+  ready: number[],                                  // índices de procesos listos para ejecutar
+  processes: ProcessInput[],                         // lista completa de procesos
+  remainingWorkOf: (i: number) => number,            // devuelve el trabajo restante del proceso i
+  readyTimeOf: (i: number) => number,                // devuelve el momento en que el proceso i quedó listo
+  fifoOrderOf: (i: number) => number,                // devuelve el orden FIFO de entrada a I/O del proceso i
+  hasRunBefore: (i: number) => boolean,               // indica si el proceso i ya se ejecutó antes
 ): number {
-  let sel = ready[0];
+  let sel = ready[0]; // se asume el primero como seleccionado inicial
+
+  // Recorre el resto de los candidatos listos comparándolos con el seleccionado actual
   for (let i = 1; i < ready.length; i++) {
     const idx = ready[i];
+
+    // Compara el trabajo restante: si idx tiene menos trabajo, gana idx
     const durCmp = remainingWorkOf(idx) - remainingWorkOf(sel);
+
     if (durCmp < 0) {
+      // idx tiene menos trabajo restante que sel → idx pasa a ser el seleccionado
       sel = idx;
     } else if (durCmp === 0) {
+      // Empate en trabajo restante: desempatar por readyTime (quién llegó/quedó listo antes)
       const readyCmp = readyTimeOf(idx) - readyTimeOf(sel);
+
       if (readyCmp < 0) {
+        // idx quedó listo antes que sel → idx gana
         sel = idx;
       } else if (readyCmp === 0) {
-        const selFresh = !hasRunBefore(sel);
-        const idxFresh = !hasRunBefore(idx);
+        // Sigue el empate: revisar si son llegadas nuevas o regresos de I/O
+        const selFresh = !hasRunBefore(sel); // ¿sel nunca se ha ejecutado antes?
+        const idxFresh = !hasRunBefore(idx); // ¿idx nunca se ha ejecutado antes?
+
         if (selFresh && idxFresh) {
-          // Both fresh: tie-break by id (spec requirement)
+          // Ambos son llegadas nuevas (frescas): desempatar por id, en orden ascendente
           if (processes[idx].id < processes[sel].id) sel = idx;
         } else {
-          // At least one I/O returnee: FIFO order wins
+          // Al menos uno de los dos ya regresó de I/O:
+          // en este caso manda el orden FIFO (quién entró primero a la cola de I/O)
           const fifoCmp = fifoOrderOf(idx) - fifoOrderOf(sel);
+
           if (fifoCmp < 0) {
+            // idx entró antes a I/O → idx gana
             sel = idx;
           } else if (fifoCmp === 0 && processes[idx].id < processes[sel].id) {
+            // Último desempate: si incluso el orden FIFO es igual, se usa el id ascendente
             sel = idx;
           }
         }
       }
     }
   }
-  return sel;
+
+  return sel; // devuelve el índice del proceso seleccionado como "el más corto"
 }
 
 // Motor principal SJF: ejecuta la simulación completa
