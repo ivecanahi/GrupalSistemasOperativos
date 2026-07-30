@@ -182,7 +182,7 @@ function App() {
                   <QueueSection title="Cola de listos (SJF)" slices={readySlices} colorMap={colorMap} accent="sjf" />
                 )}
                 {algorithm === 'RR' && (
-                  <QueueSection title="Cola de listos (Round Robin)" slices={readySlices} colorMap={colorMap} accent="rr" />
+                  <QueueSection title="Cola de listos (Round Robin)" slices={cpuSlices} colorMap={colorMap} accent="rr" />
                 )}
                 <QueueSection
                   title="Cola de Operaciones de entrada/salida"
