@@ -454,5 +454,35 @@ describe('runRoundRobin', () => {
       expect(rA.turnaroundTime).toBe(15);
       expect(rA.waitingTime).toBe(rA.turnaroundTime - 8 - 7);
     });
+
+    // =========================================================
+    // Regression: same-time I/O returns break ties by whoever entered
+    // I/O first, NOT by process id.
+    // =========================================================
+    it('breaks a same-time I/O-return tie by FIFO I/O-entry order, not by id', () => {
+      // Z enters I/O at t=2 (after its [0,2) phase); A enters I/O later,
+      // at t=5 (after its [2,5) phase). Both I/O durations are sized so
+      // BOTH return to the ready queue at the exact same instant, t=8.
+      // 'A' < 'Z' alphabetically, so an id-ascending tie-break would
+      // wrongly dispatch A first. FIFO-by-entry-order must dispatch Z
+      // first, since Z queued for I/O three time units before A did.
+      const processes: ProcessInput[] = [
+        { id: 'Z', name: 'Z', arrivalTime: 0, burstTime: 6, ioOperations: [{ after: 2, duration: 6 }] },
+        { id: 'A', name: 'A', arrivalTime: 1, burstTime: 5, ioOperations: [{ after: 3, duration: 3 }] },
+      ];
+
+      const result = runRoundRobin(processes, 10);
+
+      expect(result.ioTimeline).toEqual([
+        { processId: 'Z', start: 2, end: 8 },
+        { processId: 'A', start: 5, end: 8 },
+      ]);
+      expect(result.timeline).toEqual([
+        { processId: 'Z', start: 0, end: 2 },
+        { processId: 'A', start: 2, end: 5 },
+        { processId: 'Z', start: 8, end: 12 },
+        { processId: 'A', start: 12, end: 14 },
+      ]);
+    });
   });
 });
