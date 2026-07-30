@@ -213,28 +213,48 @@ export function runSJF(processes: ProcessInput[]): SchedulingResult {
 
   // Construye resultados por proceso: waiting y turnaround
   const processResults: ProcessResult[] = [];
+
   for (const p of processes) {
-    const startTime = firstStart.get(p.id)!;
-    const finish = finishTime.get(p.id)!;
-    const turnaroundTime = finish - p.arrivalTime;
+    const startTime = firstStart.get(p.id)!; // Momento en que el proceso empezó a ejecutarse por primera vez
+    const finish = finishTime.get(p.id)!; // Momento en que el proceso terminó completamente (CPU + I/O)
+    const turnaroundTime = finish - p.arrivalTime;  // Turnaround = tiempo total desde que llegó hasta que terminó
+
+    // Suma la duración de TODAS las operaciones de I/O de este proceso
+    // (normalizeIoOperations convierte los distintos formatos de I/O —
+    //  legacy o ioOperations— a una lista uniforme para poder sumarlas)
     const sumIo = normalizeIoOperations(p).reduce((s, op) => s + op.duration, 0);
+
+    // Waiting time = tiempo total menos el tiempo que realmente trabajó en CPU
+    // menos el tiempo que estuvo esperando en I/O
+    // (o sea: cuánto tiempo estuvo "sentado esperando su turno" sin hacer nada)
     const waitingTime = turnaroundTime - p.burstTime - sumIo;
 
+    // Guarda el resultado individual de este proceso
     processResults.push({
-      processId: p.id, arrivalTime: p.arrivalTime,
-      startTime, finishTime: finish,
-      waitingTime, turnaroundTime,
+      processId: p.id,
+      arrivalTime: p.arrivalTime,
+      startTime,
+      finishTime: finish,
+      waitingTime,
+      turnaroundTime,
     });
   }
 
   // Promedios finales
+  // Suma todos los waitingTime de todos los procesos
   const sumWaiting = processResults.reduce((s, r) => s + r.waitingTime, 0);
+
+  // Suma todos los turnaroundTime de todos los procesos
   const sumTurnaround = processResults.reduce((s, r) => s + r.turnaroundTime, 0);
 
   return {
-    timeline, processResults,
-    averageWaitingTime: sumWaiting / n,
+    timeline,        // la línea de tiempo de ejecución en CPU (qué proceso corrió cuándo)
+    processResults,  // resultados individuales por proceso (waiting, turnaround, etc.)
+    averageWaitingTime: sumWaiting / n, // Promedio de tiempo de espera de todos los procesos
+
+    // Promedio de tiempo de retorno (turnaround) de todos los procesos
     averageTurnaroundTime: sumTurnaround / n,
-    ioTimeline,
+
+    ioTimeline,      // la línea de tiempo de las esperas de I/O (quién esperó cuándo)
   };
 }

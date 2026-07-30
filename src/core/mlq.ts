@@ -70,18 +70,21 @@ export function runMLQ(
   const finishTime = new Map<string, number>();
 
   // ──────────── ESTADO DE LA COLA SJF ────────────
-  const sjfN = sjfProcesses.length;
-  const sjfOps = sjfProcesses.map(normalizeIoOperations);
-  let nextSjfFifoOrder = 0;
+  const sjfN = sjfProcesses.length; // Cantidad total de procesos a planificar
+  const sjfOps = sjfProcesses.map(normalizeIoOperations); // Lista normalizada de operaciones de I/O por cada proceso
+  let nextSjfFifoOrder = 0; // Contador incremental para llevar el orden de llegada/retorno (usado en desempates FIFO)
+  
+  // Guarda el estado de ejecución individual de cada proceso
   const sjfStates: SjfProcState[] = sjfProcesses.map(p => ({
-    opIndex: 0,
-    cpuConsumed: 0,
-    stage: 'running',
-    nextReadyTime: p.arrivalTime,
-    fifoOrder: nextSjfFifoOrder++,
+    opIndex: 0,              // Índice de la operación de E/S actual que le toca ejecutar
+    cpuConsumed: 0,          // Tiempo total de CPU que el proceso ya ha consumido
+    stage: 'running',        // Estado del proceso ('running' si está activo o 'done' si terminó)
+    nextReadyTime: p.arrivalTime, // Momento exacto en el que el proceso estará listo para usar la CPU
+    fifoOrder: nextSjfFifoOrder++, // Turno de llegada inicial asignado para desempatar
   }));
-  let sjfCompletedCount = 0;
+  let sjfCompletedCount = 0; // Contador de cuántos procesos han terminado completamente su ciclo
 
+  // Calcula la duración de la ráfaga actual de CPU hasta la próxima E/S o su finalización
   const sjfDurationOf = (i: number): number => {
     const st = sjfStates[i], ops = sjfOps[i];
     return st.opIndex < ops.length ? ops[st.opIndex].after - st.cpuConsumed : sjfProcesses[i].burstTime - st.cpuConsumed;
@@ -91,6 +94,7 @@ export function runMLQ(
   const sjfFifoOrderOf = (i: number): number => sjfStates[i].fifoOrder;
   const sjfHasRunBefore = (i: number): boolean => sjfStates[i].cpuConsumed > 0;
 
+  // Filtra los procesos que ya están listos para ejecutarse en el tiempo actual
   function sjfReadyCandidates(currentTime: number): number[] {
     const ready: number[] = [];
     for (let i = 0; i < sjfN; i++) {
@@ -99,24 +103,30 @@ export function runMLQ(
     return ready;
   }
 
+  // Selecciona el proceso con la ráfaga restante más corta aplicando criterios de desempate
   function selectShortestSjf(ready: number[]): number {
     let sel = ready[0];
     for (let k = 1; k < ready.length; k++) {
       const idx = ready[k];
       const durCmp = sjfRemainingWorkOf(idx) - sjfRemainingWorkOf(sel);
+      
+      // Prioriza la ráfaga restante de CPU más corta
       if (durCmp < 0) sel = idx;
       else if (durCmp === 0) {
         const readyCmp = sjfReadyTimeOf(idx) - sjfReadyTimeOf(sel);
+        
+        // En caso de empate en duración, prioriza el que estuvo disponible primero
         if (readyCmp < 0) {
           sel = idx;
         } else if (readyCmp === 0) {
           const selFresh = !sjfHasRunBefore(sel);
           const idxFresh = !sjfHasRunBefore(idx);
+          
+          // Desempate para procesos completamente nuevos: alfabético por ID
           if (selFresh && idxFresh) {
-            // Both fresh arrivals: tie-break by id (spec requirement)
             if (sjfProcesses[idx].id < sjfProcesses[sel].id) sel = idx;
           } else {
-            // At least one I/O returnee: FIFO order wins
+            // Desempate si hay retornos de E/S: orden FIFO de llegada/retorno
             const fifoCmp = sjfFifoOrderOf(idx) - sjfFifoOrderOf(sel);
             if (fifoCmp < 0) {
               sel = idx;
@@ -130,31 +140,33 @@ export function runMLQ(
     return sel;
   }
 
-  // Despacha un proceso de la cola SJF hasta completar su fase actual
   function dispatchSjfOnce(currentTime: number): number {
     const ready = sjfReadyCandidates(currentTime);
-    const sel = selectShortestSjf(ready);
+    const sel = selectShortestSjf(ready); // Selecciona el proceso óptimo según SJF
     const p = sjfProcesses[sel], st = sjfStates[sel], ops = sjfOps[sel];
     const dur = sjfDurationOf(sel);
     const startTime = currentTime, end = startTime + dur;
 
     timeline.push({ processId: p.id, start: startTime, end });
+    
+    // Registra la primera vez que el proceso obtiene CPU
     if (!firstStart.has(p.id)) firstStart.set(p.id, startTime);
     st.cpuConsumed += dur;
 
+    // Maneja el paso a operaciones de E/S o la finalización completa del proceso
     if (st.opIndex < ops.length) {
       const op = ops[st.opIndex];
       const ioEnd = end + op.duration;
       ioTimeline.push({ processId: p.id, start: end, end: ioEnd });
       st.opIndex += 1;
+      
       if (st.cpuConsumed === p.burstTime) {
-
         st.stage = 'done';
         finishTime.set(p.id, ioEnd);
         sjfCompletedCount++;
       } else {
         st.nextReadyTime = ioEnd;
-        st.fifoOrder = nextSjfFifoOrder++; // record I/O entry order for FIFO tie-break on return
+        st.fifoOrder = nextSjfFifoOrder++; // Registra el orden de entrada a E/S para futuros desempates FIFO
       }
     } else {
       st.stage = 'done'; finishTime.set(p.id, end); sjfCompletedCount++;

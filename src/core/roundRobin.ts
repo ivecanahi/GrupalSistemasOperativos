@@ -28,18 +28,22 @@ interface ReadyCandidate {
 
 // Motor principal Round Robin
 export function runRoundRobin(
-  processes: ProcessInput[],
-  quantum: number,
+  processes: ProcessInput[],  // lista de procesos a planificar
+  quantum: number,             
 ): SchedulingResult {
   if (quantum <= 0) {
     throw new Error('Quantum must be positive');
   }
 
+  // Caso borde: si no hay procesos que planificar, 
+  // se devuelve un resultado "vacío" sin hacer ningún cálculo
   if (processes.length === 0) {
     return {
-      timeline: [], processResults: [],
-      averageWaitingTime: 0, averageTurnaroundTime: 0,
-      ioTimeline: [],
+      timeline: [],              // sin ejecuciones de CPU
+      processResults: [],        // sin resultados por proceso
+      averageWaitingTime: 0,     // promedio de espera: 0 (no hay nada que promediar)
+      averageTurnaroundTime: 0,  // promedio de turnaround: 0
+      ioTimeline: [],            // sin operaciones de I/O
     };
   }
 
@@ -92,34 +96,54 @@ export function runRoundRobin(
   function enqueueReady(now: number): void {
     const candidates: ReadyCandidate[] = [];
 
-    // Nuevas llegadas cuyo arrivalTime ya pasó
+    // PROCESAR NUEVAS LLEGADAS AL SISTEMA:
+    // Recorre los procesos ordenados cuya hora de llegada (arrivalTime) ya ocurrió o es igual al tiempo actual (now)
     while (nextArrivalIdx < sorted.length && sorted[nextArrivalIdx].arrivalTime <= now) {
       const arr = sorted[nextArrivalIdx];
+
+      // Si el proceso aún no ha finalizado, se añade a la cola de candidatos listos para ejecución
       if (!completed.has(arr.id)) {
-        candidates.push({ id: arr.id, readyTime: arr.arrivalTime, order: nextOrder++ });
+        candidates.push({
+          id: arr.id,
+          readyTime: arr.arrivalTime,
+          order: nextOrder++ // Orden de llegada para desempatar turnos
+        });
       }
       nextArrivalIdx++;
     }
 
-    // Procesos que vuelven de E/S
-    const stillPending: PendingIo[] = [];
+    // PROCESAR RETORNOS DE OPERACIONES DE ENTRADA/SALIDA (E/S):
+    const stillPending: PendingIo[] = []; // Almacenará los procesos que continúan bloqueados en E/S
+
     for (const io of pendingIo) {
+      // Comprueba si la operación de E/S del proceso ya terminó en el tiempo actual (now)
       if (io.readyAt <= now) {
+
+        // Caso A: Al proceso aún le queda tiempo de CPU por ejecutar
         if (io.nextRemaining > 0) {
           candidates.push({
-            id: io.processId, readyTime: io.readyAt,
-            resetRemaining: io.nextRemaining, order: io.order,
+            id: io.processId,
+            readyTime: io.readyAt,
+            resetRemaining: io.nextRemaining,
+            order: io.order,
           });
-        } else {
-          completed.add(io.processId);
-          finishTime.set(io.processId, io.readyAt);
         }
-      } else {
+        // Caso B: El proceso terminó toda su ejecución durante la E/S
+        else {
+          completed.add(io.processId);
+          finishTime.set(io.processId, io.readyAt); // Registra el tiempo final de ejecución
+        }
+      }
+      // Si la E/S aún no finaliza, el proceso se conserva en la lista de pendientes
+      else {
         stillPending.push(io);
       }
     }
+
+    // Actualiza la lista de E/S dejando únicamente los procesos que siguen esperando
     pendingIo.length = 0;
     pendingIo.push(...stillPending);
+
 
     // Ordena: primero por readyTime, luego por orden de llegada FIFO
     candidates.sort((a, b) => (a.readyTime !== b.readyTime ? a.readyTime - b.readyTime : a.order - b.order));
@@ -204,29 +228,44 @@ export function runRoundRobin(
     }
   }
 
-  // Construye resultados preservando el orden original de entrada
+  // Construye los resultados finales preservando el orden original en el que se recibieron los procesos
   const processResults: ProcessResult[] = [];
+
   for (const p of processes) {
-    const start = firstStart.get(p.id)!;
-    const finish = finishTime.get(p.id)!;
+    const start = firstStart.get(p.id)!;     // Primer instante en que el proceso usó la CPU
+    const finish = finishTime.get(p.id)!;     // Instante exacto en el que el proceso finalizó
+
+    // Turnaround Time (Tiempo de Retorno): Tiempo total transcurrido desde que llegó hasta que terminó
     const turnaround = finish - p.arrivalTime;
+
+    // Suma la duración de todas las operaciones de Entrada/Salida realizadas por el proceso
     const sumIo = normalizeIoOperations(p).reduce((s, op) => s + op.duration, 0);
+
+    // Waiting Time (Tiempo de Espera): Tiempo de retorno menos el tiempo de ejecución en CPU y en E/S
     const waiting = turnaround - p.burstTime - sumIo;
 
+    // Guarda los resultados calculados para este proceso
     processResults.push({
-      processId: p.id, arrivalTime: p.arrivalTime,
-      startTime: start, finishTime: finish,
-      waitingTime: waiting, turnaroundTime: turnaround,
+      processId: p.id, 
+      arrivalTime: p.arrivalTime,
+      startTime: start, 
+      finishTime: finish,
+      waitingTime: waiting, 
+      turnaroundTime: turnaround,
     });
   }
 
+  // CÁLCULO DE PROMEDIOS GENERALES Y RETORNO:
+  // Acumula la suma total de los tiempos de espera y de retorno de todos los procesos
   const sumWaiting = processResults.reduce((s, r) => s + r.waitingTime, 0);
   const sumTurnaround = processResults.reduce((s, r) => s + r.turnaroundTime, 0);
 
+  // Retorna el objeto con toda la información de la simulación
   return {
-    timeline, processResults,
-    averageWaitingTime: sumWaiting / processes.length,
-    averageTurnaroundTime: sumTurnaround / processes.length,
-    ioTimeline,
+    timeline,                             // Historial de ejecución de la CPU
+    processResults,                       // Métricas detalladas por cada proceso
+    averageWaitingTime: sumWaiting / processes.length,       // Promedio del tiempo de espera
+    averageTurnaroundTime: sumTurnaround / processes.length, // Promedio del tiempo de retorno
+    ioTimeline,                           // Historial de uso de Entrada/Salida
   };
 }
