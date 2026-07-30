@@ -14,6 +14,8 @@ interface SjfProcState {
   stage: 'running' | 'done';
   /** Gate for readiness while `stage === 'running'` — mirrors sjf.ts's ProcState. */
   nextReadyTime: number;
+  /** Monotonic order for FIFO tie-breaking (arrival / I/O return order). Mirrors sjf.ts. */
+  fifoOrder: number;
 }
 
 interface PendingIo {
@@ -78,11 +80,13 @@ export function runMLQ(
   // ===================================================================
   const sjfN = sjfProcesses.length;
   const sjfOps = sjfProcesses.map(normalizeIoOperations);
+  let nextSjfFifoOrder = 0;
   const sjfStates: SjfProcState[] = sjfProcesses.map(p => ({
     opIndex: 0,
     cpuConsumed: 0,
     stage: 'running',
     nextReadyTime: p.arrivalTime,
+    fifoOrder: nextSjfFifoOrder++,
   }));
   let sjfCompletedCount = 0;
 
@@ -98,6 +102,8 @@ export function runMLQ(
     return sjfProcesses[i].burstTime - st.cpuConsumed;
   };
   const sjfReadyTimeOf = (i: number): number => sjfStates[i].nextReadyTime;
+  const sjfFifoOrderOf = (i: number): number => sjfStates[i].fifoOrder;
+  const sjfHasRunBefore = (i: number): boolean => sjfStates[i].cpuConsumed > 0;
 
   function sjfReadyCandidates(currentTime: number): number[] {
     const ready: number[] = [];
@@ -119,8 +125,21 @@ export function runMLQ(
         const readyCmp = sjfReadyTimeOf(idx) - sjfReadyTimeOf(sel);
         if (readyCmp < 0) {
           sel = idx;
-        } else if (readyCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) {
-          sel = idx;
+        } else if (readyCmp === 0) {
+          const selFresh = !sjfHasRunBefore(sel);
+          const idxFresh = !sjfHasRunBefore(idx);
+          if (selFresh && idxFresh) {
+            // Both fresh arrivals: tie-break by id (spec requirement)
+            if (sjfProcesses[idx].id < sjfProcesses[sel].id) sel = idx;
+          } else {
+            // At least one I/O returnee: FIFO order wins
+            const fifoCmp = sjfFifoOrderOf(idx) - sjfFifoOrderOf(sel);
+            if (fifoCmp < 0) {
+              sel = idx;
+            } else if (fifoCmp === 0 && sjfProcesses[idx].id < sjfProcesses[sel].id) {
+              sel = idx;
+            }
+          }
         }
       }
     }
@@ -156,6 +175,7 @@ export function runMLQ(
         sjfCompletedCount++;
       } else {
         st.nextReadyTime = ioEnd;
+        st.fifoOrder = nextSjfFifoOrder++; // record I/O entry order for FIFO tie-break on return
       }
     } else {
       st.stage = 'done';
