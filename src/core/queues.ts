@@ -42,7 +42,7 @@ export function buildQueueTimelines(
       if (slice.start >= cursor) {
         const ioAtCursor = ownIo.find(s => s.start === cursor);
         if (ioAtCursor) {
-          if (ioAtCursor.end < slice.start) {
+          if (ioAtCursor.end <= slice.start) {
             ready.push({ processId: p.id, start: ioAtCursor.end, end: slice.start });
           }
         } else {

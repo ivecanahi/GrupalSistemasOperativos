@@ -105,8 +105,8 @@ describe('buildQueueTimelines', () => {
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
     // A arrives at 0 and starts immediately -> instant ready slice [0,0)
-    // gap [2,5) is fully covered by the io interval -> no other ready slice
-    expect(queues.ready).toEqual([{ processId: 'A', start: 0, end: 0 }]);
+    // A returns from io at 5 and starts immediately -> instant slice [5,5)
+    expect(queues.ready).toEqual([{ processId: 'A', start: 0, end: 0 }, { processId: 'A', start: 5, end: 5 }]);
     expect(queues.io).toEqual([{ processId: 'A', start: 2, end: 5 }]);
   });
 
@@ -127,8 +127,8 @@ describe('buildQueueTimelines', () => {
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
     // A arrives at 0 and starts immediately -> instant ready slice [0,0)
-    // A's gap [2,12) starts exactly at its io interval's start -> no other ready slice for A
-    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }]);
+    // A returns from io at 12 and starts immediately -> instant slice [12,12)
+    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }, { processId: 'A', start: 12, end: 12 }]);
     expect(queues.io).toEqual([{ processId: 'A', start: 2, end: 12 }]);
   });
 
@@ -150,9 +150,12 @@ describe('buildQueueTimelines', () => {
     const queues = buildQueueTimelines(processes, cpuTimeline, ioTimeline);
 
     // A arrives at 0 and starts immediately -> instant ready slice [0,0)
-    // Both gaps ([2,5) and [8,12)) are fully covered by their respective
-    // io intervals -> no other ready slices for A
-    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([{ processId: 'A', start: 0, end: 0 }]);
+    // A returns from io1 at 5 and io2 at 12, both start immediately -> instant slices [5,5), [12,12)
+    expect(queues.ready.filter(s => s.processId === 'A')).toEqual([
+      { processId: 'A', start: 0, end: 0 },
+      { processId: 'A', start: 5, end: 5 },
+      { processId: 'A', start: 12, end: 12 },
+    ]);
     expect(queues.io).toEqual(ioTimeline);
   });
 
