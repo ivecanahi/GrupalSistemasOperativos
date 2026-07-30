@@ -1,9 +1,9 @@
-import type { QueueSlice } from '../types/scheduling';
-import { packIntervals, type PackedSlice } from '../lib/lanePacking';
-import { pickTextColor } from '../lib/contrastColor';
+import type { QueueSlice } from "../types/scheduling";
+import { packIntervals, type PackedSlice } from "../lib/lanePacking";
+import { pickTextColor } from "../lib/contrastColor";
 
-export type QueueSectionAccent = 'sjf' | 'rr' | 'io' | 'cpu';
-export type QueueSectionLayout = 'timeline' | 'row';
+export type QueueSectionAccent = "sjf" | "rr" | "io" | "cpu";
+export type QueueSectionLayout = "timeline" | "row";
 
 interface QueueSectionProps {
   title: string;
@@ -17,7 +17,7 @@ const MAX_INTEGER_TICK_SPAN = 40;
 const PX_PER_MS = 48;
 const BAND_HEIGHT = 22;
 const ROW_BLOCK_WIDTH = 72; // px — fixed size for ready-queue blocks
-const ROW_BLOCK_GAP = 4;    // px — gap between blocks
+const ROW_BLOCK_GAP = 4; // px — gap between blocks
 
 function buildTicks(maxEnd: number): number[] {
   if (maxEnd <= 0) return [0];
@@ -36,13 +36,11 @@ function buildTicks(maxEnd: number): number[] {
 function TimelineQueue({
   slices,
   colorMap,
-  accent,
 }: {
   slices: QueueSlice[];
   colorMap: Map<string, string>;
-  accent: QueueSectionAccent;
 }) {
-  const maxEnd = slices.length > 0 ? Math.max(...slices.map(s => s.end)) : 0;
+  const maxEnd = slices.length > 0 ? Math.max(...slices.map((s) => s.end)) : 0;
   const scale = maxEnd > 0 ? 100 / maxEnd : 1;
   const ticks = buildTicks(maxEnd);
   const packed: PackedSlice[] = packIntervals(slices);
@@ -51,17 +49,27 @@ function TimelineQueue({
 
   return (
     <div className="queue-section-scroll">
-      <div className="queue-section-content" style={{ minWidth: `${contentWidth}px` }}>
+      <div
+        className="queue-section-content"
+        style={{ minWidth: `${contentWidth}px` }}
+      >
         <div className="queue-ruler">
-          {ticks.map(t => (
-            <span key={t} className="queue-ruler-tick" style={{ left: `${t * scale}%` }}>
+          {ticks.map((t) => (
+            <span
+              key={t}
+              className="queue-ruler-tick"
+              style={{ left: `${t * scale}%` }}
+            >
               {t}
             </span>
           ))}
         </div>
-        <div className="queue-section-row" style={{ height: `${trackCount * BAND_HEIGHT}px` }}>
+        <div
+          className="queue-section-row"
+          style={{ height: `${trackCount * BAND_HEIGHT}px` }}
+        >
           {packed.map((s, i) => {
-            const color = colorMap.get(s.processId) ?? 'var(--series-1)';
+            const color = colorMap.get(s.processId) ?? "var(--series-1)";
             const width = (s.end - s.start) * scale;
             const left = s.start * scale;
             const textColor = pickTextColor(color);
@@ -80,7 +88,7 @@ function TimelineQueue({
                   top: `${s.track * BAND_HEIGHT}px`,
                   height: `${BAND_HEIGHT - 3}px`,
                   background: color,
-                  color: textColor === 'dark' ? '#08060d' : '#fff',
+                  color: textColor === "dark" ? "#08060d" : "#fff",
                 }}
               >
                 {s.processId}
@@ -110,7 +118,7 @@ function RowQueue({
       <div className="queue-section-content queue-section-content-row">
         <div className="queue-section-row queue-section-row-flat">
           {sorted.map((s, i) => {
-            const color = colorMap.get(s.processId) ?? 'var(--series-1)';
+            const color = colorMap.get(s.processId) ?? "var(--series-1)";
             const textColor = pickTextColor(color);
             return (
               <div
@@ -123,7 +131,7 @@ function RowQueue({
                   width: `${ROW_BLOCK_WIDTH}px`,
                   height: `${BAND_HEIGHT - 3}px`,
                   background: color,
-                  color: textColor === 'dark' ? '#08060d' : '#fff',
+                  color: textColor === "dark" ? "#08060d" : "#fff",
                   marginRight: `${ROW_BLOCK_GAP}px`,
                 }}
               >
@@ -139,17 +147,23 @@ function RowQueue({
 
 /* ── Main component ────────────────────────────────────────────────── */
 
-export function QueueSection({ title, slices, colorMap, accent, layout }: QueueSectionProps) {
+export function QueueSection({
+  title,
+  slices,
+  colorMap,
+  accent,
+  layout,
+}: QueueSectionProps) {
   const resolvedLayout: QueueSectionLayout =
-    layout ?? (accent === 'sjf' || accent === 'rr' ? 'row' : 'timeline');
+    layout ?? (accent === "sjf" || accent === "rr" ? "row" : "timeline");
 
   return (
     <div className={`queue-section accent-${accent}`}>
       <h3 className="queue-section-title">{title}</h3>
-      {resolvedLayout === 'row' ? (
+      {resolvedLayout === "row" ? (
         <RowQueue slices={slices} colorMap={colorMap} />
       ) : (
-        <TimelineQueue slices={slices} colorMap={colorMap} accent={accent} />
+        <TimelineQueue slices={slices} colorMap={colorMap} />
       )}
     </div>
   );
